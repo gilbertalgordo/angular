@@ -12,8 +12,9 @@ import ts from 'typescript';
 import {ErrorCode, FatalDiagnosticError, makeRelatedInformation} from '../../../diagnostics';
 import {assertSuccessfulReferenceEmit, ImportFlags, Reference, ReferenceEmitter} from '../../../imports';
 import {ClassPropertyMapping, HostDirectiveMeta, InputMapping, InputTransform} from '../../../metadata';
-import {DynamicValue, EnumValue, PartialEvaluator, ResolvedValue} from '../../../partial_evaluator';
+import {DynamicValue, EnumValue, PartialEvaluator, ResolvedValue, traceDynamicValue} from '../../../partial_evaluator';
 import {ClassDeclaration, ClassMember, ClassMemberKind, Decorator, filterToMembersWithDecorator, isNamedClassDeclaration, ReflectionHost, reflectObjectLiteral} from '../../../reflection';
+import {CompilationMode} from '../../../transform';
 import {createSourceSpan, createValueHasWrongTypeError, forwardRefResolver, getConstructorDependencies, ReferencesRegistry, toR3Reference, tryUnwrapForwardRef, unwrapConstructorDependencies, unwrapExpression, validateConstructorDependencies, wrapFunctionExpressionsInParens, wrapTypeReference,} from '../../common';
 
 const EMPTY_OBJECT: {[key: string]: string} = {};
@@ -34,7 +35,7 @@ export function extractDirectiveMetadata(
     clazz: ClassDeclaration, decorator: Readonly<Decorator|null>, reflector: ReflectionHost,
     evaluator: PartialEvaluator, refEmitter: ReferenceEmitter,
     referencesRegistry: ReferencesRegistry, isCore: boolean, annotateForClosureCompiler: boolean,
-    defaultSelector: string|null = null): {
+    compilationMode: CompilationMode, defaultSelector: string|null = null): {
   decorator: Map<string, ts.Expression>,
   metadata: R3DirectiveMetadata,
   inputs: ClassPropertyMapping<InputMapping>,
@@ -155,7 +156,7 @@ export function extractDirectiveMetadata(
     exportAs = resolved.split(',').map(part => part.trim());
   }
 
-  const rawCtorDeps = getConstructorDependencies(clazz, reflector, isCore);
+  const rawCtorDeps = getConstructorDependencies(clazz, reflector, isCore, compilationMode);
 
   // Non-abstract directives (those with a selector) require valid constructor dependencies, whereas
   // abstract directives are allowed to have invalid dependencies, given that a subclass may call
@@ -458,6 +459,48 @@ function extractQueriesFromDecorator(
     }
   });
   return {content, view};
+}
+
+export function parseDirectiveStyles(
+    directive: Map<string, ts.Expression>, evaluator: PartialEvaluator,
+    compilationMode: CompilationMode): null|string[] {
+  const expression = directive.get('styles');
+
+  if (!expression) {
+    return null;
+  }
+
+  const evaluated = evaluator.evaluate(expression);
+  const value = typeof evaluated === 'string' ? [evaluated] : evaluated;
+
+  // Create specific error if any string is imported from external file in local compilation mode
+  if (compilationMode === CompilationMode.LOCAL && Array.isArray(value)) {
+    for (const entry of value) {
+      if (entry instanceof DynamicValue && entry.isFromUnknownIdentifier()) {
+        const relatedInformation = traceDynamicValue(expression, entry);
+
+        const chain: ts.DiagnosticMessageChain = {
+          messageText: `Unknown identifier used as styles string: ${
+              entry.node
+                  .getText()} (did you import this string from another file? This is not allowed in local compilation mode. Please either inline it or move it to a separate file and include it using 'styleUrl')`,
+          category: ts.DiagnosticCategory.Error,
+          code: 0,
+        };
+
+        throw new FatalDiagnosticError(
+            ErrorCode.LOCAL_COMPILATION_IMPORTED_STYLES_STRING, expression, chain,
+            relatedInformation);
+      }
+    }
+  }
+
+  if (!isStringArrayOrDie(value, 'styles', expression)) {
+    throw createValueHasWrongTypeError(
+        expression, value,
+        `Failed to resolve @Component.styles to a string or an array of strings`);
+  }
+
+  return value;
 }
 
 export function parseFieldStringArrayValue(

@@ -21,14 +21,20 @@ import {executeTemplate, executeViewQueryFn, handleError, processHostBindingOpCo
 
 export function detectChangesInternal<T>(
     tView: TView, lView: LView, context: T, notifyErrorHandler = true) {
-  const rendererFactory = lView[ENVIRONMENT].rendererFactory;
+  const environment = lView[ENVIRONMENT];
+  const rendererFactory = environment.rendererFactory;
+  const afterRenderEventManager = environment.afterRenderEventManager;
 
   // Check no changes mode is a dev only mode used to verify that bindings have not changed
   // since they were assigned. We do not want to invoke renderer factory functions in that mode
   // to avoid any possible side-effects.
   const checkNoChangesMode = !!ngDevMode && isInCheckNoChangesMode();
 
-  if (!checkNoChangesMode && rendererFactory.begin) rendererFactory.begin();
+  if (!checkNoChangesMode) {
+    rendererFactory.begin?.();
+    afterRenderEventManager?.begin();
+  }
+
   try {
     refreshView(tView, lView, tView.template, context);
   } catch (error) {
@@ -37,11 +43,16 @@ export function detectChangesInternal<T>(
     }
     throw error;
   } finally {
-    if (!checkNoChangesMode && rendererFactory.end) rendererFactory.end();
+    if (!checkNoChangesMode) {
+      rendererFactory.end?.();
 
-    // One final flush of the effects queue to catch any effects created in `ngAfterViewInit` or
-    // other post-order hooks.
-    !checkNoChangesMode && lView[ENVIRONMENT].effectManager?.flush();
+      // One final flush of the effects queue to catch any effects created in `ngAfterViewInit` or
+      // other post-order hooks.
+      environment.inlineEffectRunner?.flush();
+
+      // Invoke all callbacks registered via `after*Render`, if needed.
+      afterRenderEventManager?.end();
+    }
   }
 }
 
@@ -85,18 +96,6 @@ const enum ChangeDetectionMode {
    * flag are refreshed.
    */
   Targeted,
-  /**
-   * Used when refreshing a view to force a refresh of its embedded views. This mode
-   * refreshes views without taking into account their LView flags, i.e. non-dirty OnPush components
-   * will be refreshed in this mode.
-   *
-   * TODO: we should work to remove this mode. It's used in `refreshView` because that's how the
-   * code worked before introducing ChangeDetectionMode. Instead, it should pass `Global` to the
-   * `detectChangesInEmbeddedViews`. We should aim to fix this by v17 or, at the very least, prevent
-   * this flag from affecting signal views not specifically marked for refresh (currently, this flag
-   * would _also_ force signal views to be refreshed).
-   */
-  BugToForceRefreshAndIgnoreViewFlags
 }
 
 /**
@@ -118,7 +117,7 @@ export function refreshView<T>(
   // since they were assigned. We do not want to execute lifecycle hooks in that mode.
   const isInCheckNoChangesPass = ngDevMode && isInCheckNoChangesMode();
 
-  !isInCheckNoChangesPass && lView[ENVIRONMENT].effectManager?.flush();
+  !isInCheckNoChangesPass && lView[ENVIRONMENT].inlineEffectRunner?.flush();
 
   enterView(lView);
   try {
@@ -153,7 +152,7 @@ export function refreshView<T>(
     // insertion points. This is needed to avoid the situation where the template is defined in this
     // `LView` but its declaration appears after the insertion component.
     markTransplantedViewsForRefresh(lView);
-    detectChangesInEmbeddedViews(lView, ChangeDetectionMode.BugToForceRefreshAndIgnoreViewFlags);
+    detectChangesInEmbeddedViews(lView, ChangeDetectionMode.Global);
 
     // Content query results must be refreshed before content hooks are called.
     if (tView.contentQueries !== null) {
@@ -302,15 +301,13 @@ function detectChangesInView(lView: LView, mode: ChangeDetectionMode) {
   }
 
   const tView = lView[TVIEW];
-  if ((lView[FLAGS] & (LViewFlags.CheckAlways | LViewFlags.Dirty) &&
+  const flags = lView[FLAGS];
+  if ((flags & (LViewFlags.CheckAlways | LViewFlags.Dirty) &&
        mode === ChangeDetectionMode.Global) ||
-      lView[FLAGS] & LViewFlags.RefreshView ||
-      mode === ChangeDetectionMode.BugToForceRefreshAndIgnoreViewFlags) {
+      flags & LViewFlags.RefreshView) {
     refreshView(tView, lView, tView.template, lView[CONTEXT]);
   } else if (lView[DESCENDANT_VIEWS_TO_REFRESH] > 0) {
     detectChangesInEmbeddedViews(lView, ChangeDetectionMode.Targeted);
-
-    const tView = lView[TVIEW];
     const components = tView.components;
     if (components !== null) {
       detectChangesInChildComponents(lView, components, ChangeDetectionMode.Targeted);

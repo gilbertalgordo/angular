@@ -89,7 +89,7 @@ executors:
         type: string
         default: medium
     docker:
-      - image: cimg/node:16.14.0
+      - image: cimg/node:18.13.0
     resource_class: << parameters.resource_class >>
     working_directory: ~/ng
 
@@ -99,7 +99,7 @@ executors:
         type: string
         default: medium
     docker:
-      - image: cimg/node:16.14.0-browsers
+      - image: cimg/node:18.13.0-browsers
     resource_class: << parameters.resource_class >>
     working_directory: ~/ng
 
@@ -249,42 +249,6 @@ jobs:
             - ./ng
             - ./bazel_repository_cache
 
-  test:
-    executor:
-      name: test-browser-executor
-      # Now that large integration tests are running locally in parallel (they can't run on RBE yet
-      # as they require network access for yarn install), this test is running out of memory
-      # consistently with the xlarge machine.
-      # TODO: switch back to xlarge once integration tests are running on remote-exec
-      resource_class: 2xlarge+
-    steps:
-      - custom_attach_workspace
-      - init_environment
-      - run:
-          # We need to explicitly specify the --symlink_prefix option because otherwise we would
-          # not be able to easily find the output bin directory when uploading artifacts for size
-          # measurements.
-          command: yarn test:ci
-          no_output_timeout: 20m
-        # Publish bundle artifacts which will be used to calculate the size change. **Note**: Make
-        # sure that the size plugin from the Angular robot fetches the artifacts from this CircleCI
-        # job (see .github/angular-robot.yml). Additionally any artifacts need to be stored with the
-        # following path format: "{projectName}/{context}/{fileName}". This format is necessary
-        # because otherwise the bot is not able to pick up the artifacts from CircleCI. See:
-        # https://github.com/angular/github-robot/blob/master/functions/src/plugins/size.ts#L392-L394
-      - store_artifacts:
-          path: dist/bin/packages/core/test/bundling/hello_world/bundle.min.js
-          destination: core/hello_world/bundle
-      - store_artifacts:
-          path: dist/bin/packages/core/test/bundling/todo/bundle.min.js
-          destination: core/todo/bundle
-      - store_artifacts:
-          path: dist/bin/packages/core/test/bundling/hello_world/bundle.min.js.br
-          destination: core/hello_world/bundle.br
-      - store_artifacts:
-          path: dist/bin/packages/core/test/bundling/todo/bundle.min.js.br
-          destination: core/todo/bundle.br
-
   # NOTE: This is currently limited to main builds only. See the `monitoring` configuration.
   saucelabs:
     executor:
@@ -311,48 +275,6 @@ jobs:
           no_output_timeout: 40m
       - notify_webhook_on_fail:
           webhook_url_env_var: SLACK_DEV_INFRA_CI_FAILURES_WEBHOOK_URL
-
-  test_aio:
-    executor:
-      name: test-browser-executor
-      resource_class: 2xlarge+
-    steps:
-      - custom_attach_workspace
-      - init_environment
-
-        # Run all aio tests
-      - run:
-          command: yarn --cwd aio test:ci
-          no_output_timeout: 20m
-
-        # Check the bundle sizes.
-      - run: yarn --cwd aio payload-size
-
-  deploy_aio:
-    executor:
-      name: test-browser-executor
-      resource_class: 2xlarge+
-    steps:
-      - custom_attach_workspace
-      - init_environment
-        # Deploy angular.io to production (if necessary)
-      - run: setPublicVar_CI_STABLE_BRANCH
-      - run: yarn --cwd aio deploy-production
-
-  test_aio_local:
-    executor:
-      name: test-browser-executor
-      resource_class: 2xlarge+
-    steps:
-      - custom_attach_workspace
-      - init_environment
-        # Run all aio tests (with local Angular packages)
-      - run:
-          command: yarn --cwd aio test-local:ci
-          no_output_timeout: 20m
-
-        # Check the bundle sizes.
-      - run: yarn --cwd aio payload-size aio-local
 
   # The `build-npm-packages` tasks exist for backwards-compatibility with old scripts and
   # tests that rely on the pre-Bazel `dist/packages-dist` output structure (build.sh).
@@ -385,47 +307,6 @@ jobs:
             - ~/bazel_repository_cache
             - ~/.cache/bazelisk
 
-  # This job creates compressed tarballs (`.tgz` files) for all Angular packages and stores them as
-  # build artifacts. This makes it easy to try out changes from a PR build for testing purposes.
-  # More info CircleCI build artifacts: https://circleci.com/docs/2.0/artifacts
-  #
-  # NOTE: Currently, this job only runs for PR builds. See `publish_snapshot` for non-PR builds.
-  publish_packages_as_artifacts:
-    executor: default-executor
-    environment:
-      AIMWA_PACKAGES_DIR: &aimwa_packages_dir 'dist/angular-in-memory-web-api-dist'
-      AIMWA_PACKAGES_ARCHIVES_DIR: &aimwa_packages_archives_dir 'dist/angular-in-memory-web-api-dist-archives'
-      NG_PACKAGES_DIR: &ng_packages_dir 'dist/packages-dist'
-      NG_PACKAGES_ARCHIVES_DIR: &ng_packages_archives_dir 'dist/packages-dist-archives'
-      ZONEJS_PACKAGES_DIR: &zonejs_packages_dir 'dist/zone.js-dist'
-      ZONEJS_PACKAGES_ARCHIVES_DIR: &zonejs_packages_archives_dir 'dist/zone.js-dist-archives'
-    steps:
-      - custom_attach_workspace
-      - init_environment
-      # Publish `@angular/*` packages.
-      - run:
-          name: Create artifacts for @angular/* packages
-          command: ./scripts/ci/create-package-archives.sh $CI_BRANCH $CI_COMMIT $NG_PACKAGES_DIR $NG_PACKAGES_ARCHIVES_DIR
-      - store_artifacts:
-          path: *ng_packages_archives_dir
-          destination: angular
-      # Publish the `angular-in-memory-web-api` package.
-      - run:
-          name: Create artifacts for the `angular-in-memory-web-api` package
-          # Need to remove the zone.js.tgz before archive
-          command: ./scripts/ci/create-package-archives.sh $CI_BRANCH $CI_COMMIT $AIMWA_PACKAGES_DIR $AIMWA_PACKAGES_ARCHIVES_DIR
-      - store_artifacts:
-          path: *aimwa_packages_archives_dir
-          destination: angular-in-memory-web-api
-      # Publish the `zone.js` package.
-      - run:
-          name: Create artifacts for the `zone.js` package
-          # Need to remove the zone.js.tgz before archive
-          command: rm -rf $ZONEJS_PACKAGES_DIR/archive && ./scripts/ci/create-package-archives.sh $CI_BRANCH $CI_COMMIT $ZONEJS_PACKAGES_DIR $ZONEJS_PACKAGES_ARCHIVES_DIR
-      - store_artifacts:
-          path: *zonejs_packages_archives_dir
-          destination: zone.js
-
   # This job updates the content of repos like github.com/angular/core-builds
   # for every green build on angular/angular.
   publish_snapshot:
@@ -441,14 +322,6 @@ jobs:
           name: Prepare GitHub credentials
           command: echo "https://${SNAPSHOT_BUILDS_GITHUB_TOKEN}:@github.com" > ${HOME}/.git_credentials
       - run: ./scripts/ci/publish-build-artifacts.sh
-
-  aio_misc:
-    executor: default-executor
-    steps:
-      - custom_attach_workspace
-      - run:
-          name: Check website provided in contributors.json file
-          command: yarn node aio/scripts/test-external-urls.js
 
   aio_monitoring_stable:
     executor: test-browser-executor
@@ -485,168 +358,6 @@ jobs:
       - notify_webhook_on_fail:
           webhook_url_env_var: SLACK_DEV_INFRA_CI_FAILURES_WEBHOOK_URL
 
-  legacy-unit-tests-saucelabs:
-    executor:
-      name: default-executor
-      # In order to avoid the bottleneck of having a slow host machine, we acquire a better
-      # container for this job. This is necessary because we launch a lot of browsers concurrently
-      # and therefore the tunnel and Karma need to process a lot of file requests and tests.
-      resource_class: xlarge
-    steps:
-      - custom_attach_workspace
-      - init_environment
-      - init_saucelabs_environment
-      - run:
-          name: Starting Saucelabs tunnel service
-          command: ./tools/saucelabs/sauce-service.sh run
-          background: true
-      # Build test fixtures for a test that rely on Bazel-generated fixtures. Note that disabling
-      # specific tests which are reliant on such generated fixtures is not an option as SystemJS
-      # in the Saucelabs legacy job always fetches referenced files, even if the imports would be
-      # guarded by an check to skip in the Saucelabs legacy job. We should be good running such
-      # test in all supported browsers on Saucelabs anyway until this job can be removed.
-      - run:
-          name: Preparing Bazel-generated fixtures required in legacy tests
-          command: |
-            yarn bazel build \
-                //packages/core/test:downleveled_es5_fixture \
-                //packages/common/locales
-
-            # Needed for the ES5 downlevel reflector test in `packages/core/test/reflection`.
-            mkdir -p dist/legacy-test-out/core/test/reflection/
-            cp dist/bin/packages/core/test/reflection/es5_downleveled_inheritance_fixture.js \
-              dist/legacy-test-out/core/test/reflection/es5_downleveled_inheritance_fixture.js
-            # Locale files are needed for i18n tests running within Saucelabs. These are added
-            # directly as sources so that the TypeScript compilation of `/packages/tsconfig.json`
-            # can succeed. Note that the base locale and currencies files are checked-in, so
-            # we do not need to re-generate those through Bazel.
-            mkdir -p packages/common/locales/extra
-            cp dist/bin/packages/common/locales/*.ts packages/common/locales
-            cp dist/bin/packages/common/locales/extra/*.ts packages/common/locales/extra
-      # Build the bundle for all tests to run within Saucelabs
-      - run: node tools/legacy-saucelabs/build-saucelabs-test-bundle.mjs
-      - run:
-          # Waiting on ready ensures that we don't run tests too early without Saucelabs not being ready.
-          name: Waiting for Saucelabs tunnel to connect
-          command: ./tools/saucelabs/sauce-service.sh ready-wait
-      - run:
-          name: Running tests on Saucelabs.
-          command: |
-            KARMA_WEB_TEST_MODE=SL_REQUIRED yarn karma start ./karma-js.conf.js --single-run
-      - run:
-          name: Stop Saucelabs tunnel service
-          command: ./tools/saucelabs/sauce-service.sh stop
-
-  test_zonejs:
-    executor:
-      name: default-executor
-      resource_class: xlarge
-    steps:
-      - custom_attach_workspace
-      - init_environment
-      - install_java
-
-      - run: |
-          yarn bazel build -- \
-            //packages/zone.js/bundles:zone.umd.js \
-            //packages/zone.js:npm_package \
-            //packages/zone.js/test/closure:closure_js \
-            //packages/zone.js:zone_externs
-
-      - run: |
-          mkdir -p packages/zone.js/build/
-          mkdir -p packages/zone.js/build/test/
-          mkdir -p packages/zone.js/test/
-
-          cp dist/bin/packages/zone.js/bundles/zone.umd.js packages/zone.js/build/zone.umd.js
-          cp dist/bin/packages/zone.js/npm_package/bundles/zone-mix.umd.js ./packages/zone.js/test/extra/
-          cp dist/bin/packages/zone.js/npm_package/bundles/zone-patch-electron.umd.js ./packages/zone.js/test/extra/
-          cp dist/bin/packages/zone.js/test/closure/zone.closure.mjs ./packages/zone.js/build/test/zone.closure.mjs
-          cp dist/bin/packages/zone.js/zone_externs.js ./packages/zone.js/build/zone_externs.js
-
-        # Install
-      - run: yarn --cwd packages/zone.js install --frozen-lockfile --non-interactive --cache-folder ~/.cache/yarn
-        # Run zone.js tools tests
-      - run: yarn --cwd packages/zone.js promisetest
-      - run: yarn --cwd packages/zone.js promisefinallytest
-      - run: yarn --cwd packages/zone.js jest:test
-      - run: yarn --cwd packages/zone.js jest:nodetest
-      - run: yarn --cwd packages/zone.js electrontest
-      - run: yarn --cwd packages/zone.js closuretest
-      - run: yarn --cwd packages/zone.js/test/typings install --frozen-lockfile --non-interactive --cache-folder ~/.cache/yarn
-      - run: yarn --cwd packages/zone.js/test/typings test
-
-  # TODO(josephperrott): remove job once stablitily of GHA version is verified
-  # Windows jobs
-  # Docs: https://circleci.com/docs/2.0/hello-world-windows/
-  test_win:
-    executor: windows-executor
-    steps:
-      - checkout
-
-      # Setup the proper NodeJS version. The image comes pre-installed with `nvm-windows`.
-      # Note: This happens immediately after checkout because environment initialization logic
-      # might rely on Node and shouldn't use the older image-provided NodeJS version.
-      - run:
-          name: Install NodeJS version from `.nvmrc`.
-          command: |
-            nvm on
-            nvm install $(cat .nvmrc)
-            nvm use $(cat .nvmrc)
-      - run:
-          name: Debug information for flakiness of Windows job
-          command: |
-            node -v
-            yarn -v
-            which node
-            which yarn
-            echo "Path: $PATH"
-            yarn node -v
-
-      - save_month_to_file
-      - capture_patches_for_cache_key
-      - init_environment
-      - restore_cache:
-          keys:
-            - *cache_key_win
-            - *cache_key_win_fallback
-
-      # Install project dependencies, and install Bazelisk globally. This is necessary as
-      # Windows might error when `bazel` is invoked from the project node modules. The Bazel
-      # invocation might modify the symlinked project `node_modules` again, causing failures.
-      - yarn_install
-      - run: yarn global add @bazel/bazelisk@${BAZELISK_VERSION}
-
-      - run:
-          name: Build all windows CI targets
-          command: |
-            $(yarn global bin)/bazelisk build //packages/compiler-cli/...
-          no_output_timeout: 15m
-      - run:
-          name: Test all windows CI targets
-          command: |
-            $(yarn global bin)/bazelisk test --test_tag_filters="-browser:chromium-local" //packages/compiler-cli/...
-          no_output_timeout: 15m
-
-      - save_cache:
-          key: *cache_key_win
-          paths:
-            - node_modules
-            - ~/AppData/Local/bazelisk
-
-  # TODO(josephperrott): remove job once stablitily of GHA version is verified
-  test_angular_devtools:
-    executor: test-browser-executor
-    steps:
-      - custom_attach_workspace
-      - init_environment
-      - run:
-          name: Run unit tests
-          command: yarn devtools:test
-      - run:
-          name: Test production build
-          command: yarn devtools:build:chrome
-
 workflows:
   version: 2
   default_workflow:
@@ -655,60 +366,19 @@ workflows:
           filters:
             branches:
               ignore: g3
-      - test:
-          requires:
-            - setup
       - build-npm-packages:
           requires:
             - setup
-      - legacy-unit-tests-saucelabs:
-          requires:
-            - setup
-      - test_aio:
-          requires:
-            - setup
-      - deploy_aio:
-          requires:
-            - test_aio
-      - test_aio_local:
-          requires:
-            - setup
-      - publish_packages_as_artifacts:
-          requires:
-            - build-npm-packages
       - publish_snapshot:
           <<: *only_release_branches
           requires:
-            # Only publish if tests and integration tests pass
-            - test
-            # Only publish if `aio`/`docs` tests using the locally built Angular packages pass
-            - test_aio_local
             # Get the artifacts to publish from the build-packages-dist job
             # since the publishing script expects the legacy outputs layout.
             - build-npm-packages
-            - legacy-unit-tests-saucelabs
-      - test_zonejs:
-          requires:
-            - setup
-      - test_win:
-          requires:
-            - setup
-      - test_angular_devtools:
-          requires:
-            - setup
 
   monitoring:
     jobs:
       - setup
-      - aio_misc:
-          requires:
-            - setup
-      - aio_monitoring_stable:
-          requires:
-            - setup
-      - aio_monitoring_next:
-          requires:
-            - setup
       - saucelabs:
           # Testing saucelabs via Bazel currently taking longer than the legacy saucelabs job as it
           # each karma_web_test target is provisioning and tearing down browsers which is adding

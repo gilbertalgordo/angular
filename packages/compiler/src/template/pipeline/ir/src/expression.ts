@@ -9,20 +9,21 @@
 import * as o from '../../../../output/output_ast';
 import type {ParseSourceSpan} from '../../../../parse_util';
 
-import {ExpressionKind, OpKind} from './enums';
-import {ConsumesVarsTrait, UsesSlotIndex, UsesSlotIndexTrait, UsesVarOffset, UsesVarOffsetTrait} from './traits';
+import {ExpressionKind, OpKind, SanitizerFn} from './enums';
+import {ConsumesVarsTrait, TRAIT_USES_SLOT_INDEX, UsesSlotIndex, UsesSlotIndexTrait, UsesVarOffset, UsesVarOffsetTrait} from './traits';
 
 import type {XrefId} from './operations';
 import type {CreateOp} from './ops/create';
-import type {UpdateOp} from './ops/update';
+import {Interpolation, type UpdateOp} from './ops/update';
 
 /**
  * An `o.Expression` subtype representing a logical expression in the intermediate representation.
  */
-export type Expression = LexicalReadExpr|ReferenceExpr|ContextExpr|NextContextExpr|
-    GetCurrentViewExpr|RestoreViewExpr|ResetViewExpr|ReadVariableExpr|PureFunctionExpr|
-    PureFunctionParameterExpr|PipeBindingExpr|PipeBindingVariadicExpr|SafePropertyReadExpr|
-    SafeKeyedReadExpr|SafeInvokeFunctionExpr|EmptyExpr|AssignTemporaryExpr|ReadTemporaryExpr;
+export type Expression =
+    LexicalReadExpr|ReferenceExpr|ContextExpr|NextContextExpr|GetCurrentViewExpr|RestoreViewExpr|
+    ResetViewExpr|ReadVariableExpr|PureFunctionExpr|PureFunctionParameterExpr|PipeBindingExpr|
+    PipeBindingVariadicExpr|SafePropertyReadExpr|SafeKeyedReadExpr|SafeInvokeFunctionExpr|EmptyExpr|
+    AssignTemporaryExpr|ReadTemporaryExpr|SanitizerExpr|SlotLiteralExpr;
 
 /**
  * Transformer type which converts expressions into general `o.Expression`s (which may be an
@@ -674,7 +675,7 @@ export class AssignTemporaryExpr extends ExpressionBase {
   }
 
   override clone(): AssignTemporaryExpr {
-    const a = new AssignTemporaryExpr(this.expr, this.xref);
+    const a = new AssignTemporaryExpr(this.expr.clone(), this.xref);
     a.name = this.name;
     return a;
   }
@@ -709,6 +710,57 @@ export class ReadTemporaryExpr extends ExpressionBase {
   }
 }
 
+export class SanitizerExpr extends ExpressionBase {
+  override readonly kind = ExpressionKind.SanitizerExpr;
+
+  constructor(public fn: SanitizerFn) {
+    super();
+  }
+
+  override visitExpression(visitor: o.ExpressionVisitor, context: any): any {}
+
+  override isEquivalent(e: Expression): boolean {
+    return e instanceof SanitizerExpr && e.fn === this.fn;
+  }
+
+  override isConstant() {
+    return true;
+  }
+
+  override clone(): SanitizerExpr {
+    return new SanitizerExpr(this.fn);
+  }
+
+  override transformInternalExpressions(): void {}
+}
+
+export class SlotLiteralExpr extends ExpressionBase {
+  override readonly kind = ExpressionKind.SlotLiteralExpr;
+  readonly[UsesSlotIndex] = true;
+
+  constructor(readonly target: XrefId) {
+    super();
+  }
+
+  slot: number|null = null;
+
+  override visitExpression(visitor: o.ExpressionVisitor, context: any): any {}
+
+  override isEquivalent(e: Expression): boolean {
+    return e instanceof SlotLiteralExpr && e.target === this.target && e.slot === this.slot;
+  }
+
+  override isConstant() {
+    return true;
+  }
+
+  override clone(): SlotLiteralExpr {
+    return new SlotLiteralExpr(this.target);
+  }
+
+  override transformInternalExpressions(): void {}
+}
+
 /**
  * Visits all `Expression`s in the AST of `op` with the `visitor` function.
  */
@@ -725,6 +777,14 @@ export enum VisitorContextFlag {
   InChildOperation = 0b0001,
 }
 
+function transformExpressionsInInterpolation(
+    interpolation: Interpolation, transform: ExpressionTransform, flags: VisitorContextFlag) {
+  for (let i = 0; i < interpolation.expressions.length; i++) {
+    interpolation.expressions[i] =
+        transformExpressionsInExpression(interpolation.expressions[i], transform, flags);
+  }
+}
+
 /**
  * Transform all `Expression`s in the AST of `op` with the `transform` function.
  *
@@ -734,53 +794,87 @@ export enum VisitorContextFlag {
 export function transformExpressionsInOp(
     op: CreateOp|UpdateOp, transform: ExpressionTransform, flags: VisitorContextFlag): void {
   switch (op.kind) {
-    case OpKind.Property:
     case OpKind.StyleProp:
     case OpKind.StyleMap:
     case OpKind.ClassProp:
     case OpKind.ClassMap:
-      op.expression = transformExpressionsInExpression(op.expression, transform, flags);
-      break;
-    case OpKind.InterpolateProperty:
-    case OpKind.InterpolateStyleProp:
-    case OpKind.InterpolateStyleMap:
-    case OpKind.InterpolateClassMap:
-    case OpKind.InterpolateText:
-      for (let i = 0; i < op.expressions.length; i++) {
-        op.expressions[i] = transformExpressionsInExpression(op.expressions[i], transform, flags);
+    case OpKind.Binding:
+    case OpKind.HostProperty:
+      if (op.expression instanceof Interpolation) {
+        transformExpressionsInInterpolation(op.expression, transform, flags);
+      } else {
+        op.expression = transformExpressionsInExpression(op.expression, transform, flags);
       }
+      break;
+    case OpKind.Property:
+    case OpKind.Attribute:
+      if (op.expression instanceof Interpolation) {
+        transformExpressionsInInterpolation(op.expression, transform, flags);
+      } else {
+        op.expression = transformExpressionsInExpression(op.expression, transform, flags);
+      }
+      op.sanitizer =
+          op.sanitizer && transformExpressionsInExpression(op.sanitizer, transform, flags);
+      break;
+    case OpKind.InterpolateText:
+      transformExpressionsInInterpolation(op.interpolation, transform, flags);
       break;
     case OpKind.Statement:
       transformExpressionsInStatement(op.statement, transform, flags);
       break;
-    case OpKind.Attribute:
-      if (op.value) {
-        op.value = transformExpressionsInExpression(op.value, transform, flags);
-      }
-      break;
-    case OpKind.InterpolateAttribute:
-      for (let i = 0; i < op.expressions.length; i++) {
-        op.expressions[i] = transformExpressionsInExpression(op.expressions[i], transform, flags);
-      }
-      break;
     case OpKind.Variable:
       op.initializer = transformExpressionsInExpression(op.initializer, transform, flags);
+      break;
+    case OpKind.Conditional:
+      for (const condition of op.conditions) {
+        if (condition[1] === null) {
+          // This is a default case.
+          continue;
+        }
+        condition[1] = transformExpressionsInExpression(condition[1]!, transform, flags);
+      }
+      if (op.processed !== null) {
+        op.processed = transformExpressionsInExpression(op.processed, transform, flags);
+      }
       break;
     case OpKind.Listener:
       for (const innerOp of op.handlerOps) {
         transformExpressionsInOp(innerOp, transform, flags | VisitorContextFlag.InChildOperation);
       }
       break;
+    case OpKind.ExtractedAttribute:
+      op.expression =
+          op.expression && transformExpressionsInExpression(op.expression, transform, flags);
+      break;
+    case OpKind.ExtractedMessage:
+      op.expression = transformExpressionsInExpression(op.expression, transform, flags);
+      for (const statement of op.statements) {
+        transformExpressionsInStatement(statement, transform, flags);
+      }
+      break;
+    case OpKind.I18nStart:
+      for (const placeholder in op.tagNameParams) {
+        op.tagNameParams[placeholder] =
+            transformExpressionsInExpression(op.tagNameParams[placeholder], transform, flags);
+      }
+      break;
+    case OpKind.Projection:
+    case OpKind.ProjectionDef:
     case OpKind.Element:
     case OpKind.ElementStart:
     case OpKind.ElementEnd:
+    case OpKind.I18n:
+    case OpKind.I18nEnd:
     case OpKind.Container:
     case OpKind.ContainerStart:
     case OpKind.ContainerEnd:
     case OpKind.Template:
+    case OpKind.DisableBindings:
+    case OpKind.EnableBindings:
     case OpKind.Text:
     case OpKind.Pipe:
     case OpKind.Advance:
+    case OpKind.Namespace:
       // These operations contain no expressions.
       break;
     default:
@@ -833,6 +927,14 @@ export function transformExpressionsInExpression(
     if (expr.falseCase !== null) {
       expr.falseCase = transformExpressionsInExpression(expr.falseCase, transform, flags);
     }
+  } else if (expr instanceof o.TypeofExpr) {
+    expr.expr = transformExpressionsInExpression(expr.expr, transform, flags);
+  } else if (expr instanceof o.WriteVarExpr) {
+    expr.value = transformExpressionsInExpression(expr.value, transform, flags);
+  } else if (expr instanceof o.LocalizedString) {
+    for (let i = 0; i < expr.expressions.length; i++) {
+      expr.expressions[i] = transformExpressionsInExpression(expr.expressions[i], transform, flags);
+    }
   } else if (
       expr instanceof o.ReadVarExpr || expr instanceof o.ExternalExpr ||
       expr instanceof o.LiteralExpr) {
@@ -859,7 +961,22 @@ export function transformExpressionsInStatement(
     if (stmt.value !== undefined) {
       stmt.value = transformExpressionsInExpression(stmt.value, transform, flags);
     }
+  } else if (stmt instanceof o.IfStmt) {
+    stmt.condition = transformExpressionsInExpression(stmt.condition, transform, flags);
+    for (const caseStatement of stmt.trueCase) {
+      transformExpressionsInStatement(caseStatement, transform, flags);
+    }
+    for (const caseStatement of stmt.falseCase) {
+      transformExpressionsInStatement(caseStatement, transform, flags);
+    }
   } else {
     throw new Error(`Unhandled statement kind: ${stmt.constructor.name}`);
   }
+}
+
+/**
+ * Checks whether the given expression is a string literal.
+ */
+export function isStringLiteral(expr: o.Expression): expr is o.LiteralExpr&{value: string} {
+  return expr instanceof o.LiteralExpr && typeof expr.value === 'string';
 }

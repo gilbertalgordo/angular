@@ -9,6 +9,7 @@
 import {hasInSkipHydrationBlockFlag} from '../hydration/skip_hydration';
 import {ViewEncapsulation} from '../metadata/view';
 import {RendererStyleFlags2} from '../render/api_flags';
+import {consumerDestroy} from '../signals';
 import {addToArray, removeFromArray} from '../util/array_utils';
 import {assertDefined, assertEqual, assertFunction, assertNumber, assertString} from '../util/assert';
 import {escapeCommentText} from '../util/dom';
@@ -136,7 +137,7 @@ export function createElementNode(
  * @param tView The `TView' of the `LView` from which elements should be added or removed
  * @param lView The view from which elements should be added or removed
  */
-export function removeViewFromContainer(tView: TView, lView: LView): void {
+export function removeViewFromDOM(tView: TView, lView: LView): void {
   const renderer = lView[RENDERER];
   applyView(tView, lView, renderer, WalkTNodeTreeAction.Detach, null, null);
   lView[HOST] = null;
@@ -157,7 +158,7 @@ export function removeViewFromContainer(tView: TView, lView: LView): void {
  * @param parentNativeNode The parent `RElement` where it should be inserted into.
  * @param beforeNode The node before which elements should be added, if insert mode
  */
-export function addViewToContainer(
+export function addViewToDOM(
     tView: TView, parentTNode: TNode, renderer: Renderer, lView: LView, parentNativeNode: RElement,
     beforeNode: RNode|null): void {
   lView[HOST] = parentNativeNode;
@@ -172,7 +173,7 @@ export function addViewToContainer(
  * @param tView The `TView' of the `LView` to be detached
  * @param lView the `LView` to be detached.
  */
-export function renderDetachView(tView: TView, lView: LView) {
+export function detachViewFromDOM(tView: TView, lView: LView) {
   applyView(tView, lView, lView[RENDERER], WalkTNodeTreeAction.Detach, null, null);
 }
 
@@ -349,7 +350,7 @@ export function detachView(lContainer: LContainer, removeIndex: number): LView|u
       lContainer[indexInContainer - 1][NEXT] = viewToDetach[NEXT] as LView;
     }
     const removedLView = removeFromArray(lContainer, CONTAINER_HEADER_OFFSET + removeIndex);
-    removeViewFromContainer(viewToDetach[TVIEW], viewToDetach);
+    removeViewFromDOM(viewToDetach[TVIEW], viewToDetach);
 
     // notify query that a view has been removed
     const lQueries = removedLView[QUERIES];
@@ -376,8 +377,8 @@ export function destroyLView(tView: TView, lView: LView) {
   if (!(lView[FLAGS] & LViewFlags.Destroyed)) {
     const renderer = lView[RENDERER];
 
-    lView[REACTIVE_TEMPLATE_CONSUMER]?.destroy();
-    lView[REACTIVE_HOST_BINDING_CONSUMER]?.destroy();
+    lView[REACTIVE_TEMPLATE_CONSUMER] && consumerDestroy(lView[REACTIVE_TEMPLATE_CONSUMER]);
+    lView[REACTIVE_HOST_BINDING_CONSUMER] && consumerDestroy(lView[REACTIVE_HOST_BINDING_CONSUMER]);
 
     if (renderer.destroyNode) {
       applyView(tView, lView, renderer, WalkTNodeTreeAction.Destroy, null, null);

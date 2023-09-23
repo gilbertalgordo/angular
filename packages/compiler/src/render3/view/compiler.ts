@@ -15,8 +15,9 @@ import {ParseError, ParseSourceSpan, sanitizeIdentifier} from '../../parse_util'
 import {isIframeSecuritySensitiveAttr} from '../../schema/dom_security_schema';
 import {CssSelector} from '../../selector';
 import {ShadowCss} from '../../shadow_css';
-import {emitTemplateFn, transformTemplate} from '../../template/pipeline/src/emit';
-import {ingest} from '../../template/pipeline/src/ingest';
+import {CompilationJobKind} from '../../template/pipeline/src/compilation';
+import {emitHostBindingFunction, emitTemplateFn, transform} from '../../template/pipeline/src/emit';
+import {ingestComponent, ingestHostBinding} from '../../template/pipeline/src/ingest';
 import {USE_TEMPLATE_PIPELINE} from '../../template/pipeline/switch';
 import {BindingParser} from '../../template_parser/binding_parser';
 import {error} from '../../util';
@@ -194,7 +195,8 @@ export function compileComponentFromMetadata(
     const template = meta.template;
     const templateBuilder = new TemplateDefinitionBuilder(
         constantPool, BindingScope.createRootScope(), 0, templateTypeName, null, null, templateName,
-        R3.namespaceHTML, meta.relativeContextFilePath, meta.i18nUseExternalIds);
+        R3.namespaceHTML, meta.relativeContextFilePath, meta.i18nUseExternalIds, meta.deferBlocks,
+        new Map());
 
     const templateFunctionExpression = templateBuilder.buildTemplateFunction(template.nodes, []);
 
@@ -234,26 +236,46 @@ export function compileComponentFromMetadata(
   } else {
     // This path compiles the template using the prototype template pipeline. First the template is
     // ingested into IR:
-    const tpl = ingest(meta.name, meta.template.nodes, constantPool);
+    const tpl = ingestComponent(
+        meta.name, meta.template.nodes, constantPool, meta.relativeContextFilePath,
+        meta.i18nUseExternalIds);
 
     // Then the IR is transformed to prepare it for cod egeneration.
-    transformTemplate(tpl);
+    transform(tpl, CompilationJobKind.Tmpl);
 
     // Finally we emit the template function:
     const templateFn = emitTemplateFn(tpl, constantPool);
+
+    if (tpl.contentSelectors !== null) {
+      definitionMap.set('ngContentSelectors', tpl.contentSelectors);
+    }
+
     definitionMap.set('decls', o.literal(tpl.root.decls as number));
     definitionMap.set('vars', o.literal(tpl.root.vars as number));
     if (tpl.consts.length > 0) {
-      definitionMap.set('consts', o.literalArr(tpl.consts));
+      if (tpl.constsInitializers.length > 0) {
+        definitionMap.set(
+            'consts',
+            o.fn([], [...tpl.constsInitializers, new o.ReturnStatement(o.literalArr(tpl.consts))]));
+      } else {
+        definitionMap.set('consts', o.literalArr(tpl.consts));
+      }
     }
     definitionMap.set('template', templateFn);
   }
 
-  if (meta.declarations.length > 0) {
+  if (meta.declarationListEmitMode !== DeclarationListEmitMode.RuntimeResolved &&
+      meta.declarations.length > 0) {
     definitionMap.set(
         'dependencies',
         compileDeclarationList(
             o.literalArr(meta.declarations.map(decl => decl.type)), meta.declarationListEmitMode));
+  } else if (meta.declarationListEmitMode === DeclarationListEmitMode.RuntimeResolved) {
+    const args = [meta.type.value];
+    if (meta.rawImports) {
+      args.push(meta.rawImports);
+    }
+    definitionMap.set('dependencies', o.importExpr(R3.getComponentDepsFactory).callFn(args));
   }
 
   if (meta.encapsulation === null) {
@@ -338,6 +360,8 @@ function compileDeclarationList(
       // directives: function () { return [MyDir].map(ng.resolveForwardRef); }
       const resolvedList = list.prop('map').callFn([o.importExpr(R3.resolveForwardRef)]);
       return o.fn([], [new o.ReturnStatement(resolvedList)]);
+    case DeclarationListEmitMode.RuntimeResolved:
+      throw new Error(`Unsupported with an array of pre-resolved dependencies`);
   }
 }
 
@@ -546,6 +570,46 @@ function createHostBindingsFunction(
     hostBindingsMetadata: R3HostMetadata, typeSourceSpan: ParseSourceSpan,
     bindingParser: BindingParser, constantPool: ConstantPool, selector: string, name: string,
     definitionMap: DefinitionMap): o.Expression|null {
+  const bindings =
+      bindingParser.createBoundHostProperties(hostBindingsMetadata.properties, typeSourceSpan);
+
+  // Calculate host event bindings
+  const eventBindings =
+      bindingParser.createDirectiveHostEventAsts(hostBindingsMetadata.listeners, typeSourceSpan);
+
+  if (USE_TEMPLATE_PIPELINE) {
+    // The parser for host bindings treats class and style attributes specially -- they are
+    // extracted into these separate fields. This is not the case for templates, so the compiler can
+    // actually already handle these special attributes internally. Therefore, we just drop them
+    // into the attributes map.
+    if (hostBindingsMetadata.specialAttributes.styleAttr) {
+      hostBindingsMetadata.attributes['style'] =
+          o.literal(hostBindingsMetadata.specialAttributes.styleAttr);
+    }
+    if (hostBindingsMetadata.specialAttributes.classAttr) {
+      hostBindingsMetadata.attributes['class'] =
+          o.literal(hostBindingsMetadata.specialAttributes.classAttr);
+    }
+
+    const hostJob = ingestHostBinding(
+        {
+          componentName: name,
+          properties: bindings,
+          events: eventBindings,
+          attributes: hostBindingsMetadata.attributes,
+        },
+        bindingParser, constantPool);
+    transform(hostJob, CompilationJobKind.Host);
+
+    definitionMap.set('hostAttrs', hostJob.root.attributes);
+
+    const varCount = hostJob.root.vars;
+    if (varCount !== null && varCount > 0) {
+      definitionMap.set('hostVars', o.literal(varCount));
+    }
+
+    return emitHostBindingFunction(hostJob);
+  }
   const bindingContext = o.variable(CONTEXT_NAME);
   const styleBuilder = new StylingBuilder(bindingContext);
 
@@ -562,17 +626,11 @@ function createHostBindingsFunction(
   const updateVariables: o.Statement[] = [];
 
   const hostBindingSourceSpan = typeSourceSpan;
-
-  // Calculate host event bindings
-  const eventBindings = bindingParser.createDirectiveHostEventAsts(
-      hostBindingsMetadata.listeners, hostBindingSourceSpan);
   if (eventBindings && eventBindings.length) {
     createInstructions.push(...createHostListeners(eventBindings, name));
   }
 
   // Calculate the host property bindings
-  const bindings = bindingParser.createBoundHostProperties(
-      hostBindingsMetadata.properties, hostBindingSourceSpan);
   const allOtherBindings: ParsedProperty[] = [];
 
   // We need to calculate the total amount of binding slots required by

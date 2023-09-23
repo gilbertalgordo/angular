@@ -15,6 +15,9 @@
     "name": "APP_INITIALIZER"
   },
   {
+    "name": "AfterRenderEventManager"
+  },
+  {
     "name": "AnimationAstBuilderContext"
   },
   {
@@ -195,9 +198,6 @@
     "name": "EVENT_MANAGER_PLUGINS"
   },
   {
-    "name": "EffectManager"
-  },
-  {
     "name": "ElementInstructionMap"
   },
   {
@@ -336,9 +336,6 @@
     "name": "NG_TEMPLATE_SELECTOR"
   },
   {
-    "name": "NOOP_CLEANUP_FN"
-  },
-  {
     "name": "NOT_FOUND"
   },
   {
@@ -417,13 +414,10 @@
     "name": "R3Injector"
   },
   {
+    "name": "REACTIVE_LVIEW_CONSUMER_NODE"
+  },
+  {
     "name": "REMOVE_STYLES_ON_COMPONENT_DESTROY"
-  },
-  {
-    "name": "ReactiveLViewConsumer"
-  },
-  {
-    "name": "ReactiveNode"
   },
   {
     "name": "RefCountOperator"
@@ -543,12 +537,6 @@
     "name": "ViewRef"
   },
   {
-    "name": "Watch"
-  },
-  {
-    "name": "WeakRefImpl"
-  },
-  {
     "name": "WebAnimationsPlayer"
   },
   {
@@ -606,9 +594,6 @@
     "name": "_locateOrCreateElementNode"
   },
   {
-    "name": "_nextReactiveId"
-  },
-  {
     "name": "_platformInjector"
   },
   {
@@ -663,6 +648,9 @@
     "name": "applyView"
   },
   {
+    "name": "assertConsumerNode"
+  },
+  {
     "name": "attachPatchData"
   },
   {
@@ -714,6 +702,9 @@
     "name": "collectNativeNodes"
   },
   {
+    "name": "collectNativeNodesInLContainer"
+  },
+  {
     "name": "commitLViewConsumerIfHasProducers"
   },
   {
@@ -733,6 +724,18 @@
   },
   {
     "name": "connectableObservableDescriptor"
+  },
+  {
+    "name": "consumerAfterComputation"
+  },
+  {
+    "name": "consumerBeforeComputation"
+  },
+  {
+    "name": "consumerDestroy"
+  },
+  {
+    "name": "consumerIsLive"
   },
   {
     "name": "containsElement"
@@ -766,6 +769,9 @@
   },
   {
     "name": "createLView"
+  },
+  {
+    "name": "createLViewConsumer"
   },
   {
     "name": "createNodeInjector"
@@ -811,6 +817,9 @@
   },
   {
     "name": "diPublicInInjector"
+  },
+  {
+    "name": "disableStylesheet"
   },
   {
     "name": "documentElement"
@@ -1024,9 +1033,6 @@
   },
   {
     "name": "importProvidersFrom"
-  },
-  {
-    "name": "inNotificationPhase"
   },
   {
     "name": "includeViewProviders"
@@ -1245,6 +1251,9 @@
     "name": "ngZoneApplicationErrorHandlerFactory"
   },
   {
+    "name": "nonNegativeNumber"
+  },
+  {
     "name": "nonNull"
   },
   {
@@ -1285,6 +1294,9 @@
   },
   {
     "name": "processInjectorTypesWithProviders"
+  },
+  {
+    "name": "producerRemoveLiveConsumerAtIndex"
   },
   {
     "name": "profiler"

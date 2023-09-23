@@ -26,6 +26,7 @@ import { Provider } from '@angular/core';
 import { ProviderToken } from '@angular/core';
 import { QueryList } from '@angular/core';
 import { Renderer2 } from '@angular/core';
+import { RouterState as RouterState_2 } from '@angular/router';
 import { SimpleChanges } from '@angular/core';
 import { Title } from '@angular/platform-browser';
 import { Type } from '@angular/core';
@@ -295,11 +296,10 @@ export const enum EventType {
 export interface ExtraOptions extends InMemoryScrollingOptions, RouterConfigOptions {
     bindToComponentInputs?: boolean;
     enableTracing?: boolean;
+    enableViewTransitions?: boolean;
     // @deprecated
     errorHandler?: (error: any) => any;
     initialNavigation?: InitialNavigation;
-    // @deprecated
-    malformedUriErrorHandler?: (error: URIError, urlSerializer: UrlSerializer, url: string) => UrlTree;
     preloadingStrategy?: any;
     scrollOffset?: [number, number] | (() => [number, number]);
     useHash?: boolean;
@@ -687,8 +687,6 @@ export class RouteConfigLoadStart {
 // @public
 export class Router {
     constructor();
-    // @deprecated
-    canceledNavigationResolution: 'replace' | 'computed';
     readonly componentInputBindingEnabled: boolean;
     // (undocumented)
     config: Routes;
@@ -703,8 +701,6 @@ export class Router {
     isActive(url: string | UrlTree, exact: boolean): boolean;
     isActive(url: string | UrlTree, matchOptions: IsActiveMatchOptions): boolean;
     get lastSuccessfulNavigation(): Navigation | null;
-    // @deprecated
-    malformedUriErrorHandler: (error: URIError, urlSerializer: UrlSerializer, url: string) => UrlTree;
     navigate(commands: any[], extras?: NavigationExtras): Promise<boolean>;
     navigateByUrl(url: string | UrlTree, extras?: NavigationBehaviorOptions): Promise<boolean>;
     navigated: boolean;
@@ -712,22 +708,14 @@ export class Router {
     ngOnDestroy(): void;
     // @deprecated
     onSameUrlNavigation: OnSameUrlNavigation;
-    // @deprecated
-    paramsInheritanceStrategy: 'emptyOnly' | 'always';
     parseUrl(url: string): UrlTree;
     resetConfig(config: Routes): void;
     // @deprecated
     routeReuseStrategy: RouteReuseStrategy;
-    readonly routerState: RouterState;
+    get routerState(): RouterState_2;
     serializeUrl(url: UrlTree): string;
     setUpLocationChangeListener(): void;
-    // @deprecated
-    titleStrategy?: TitleStrategy;
     get url(): string;
-    // @deprecated
-    urlHandlingStrategy: UrlHandlingStrategy;
-    // @deprecated
-    urlUpdateStrategy: 'deferred' | 'eager';
     // (undocumented)
     static ɵfac: i0.ɵɵFactoryDeclaration<Router, never>;
     // (undocumented)
@@ -782,7 +770,7 @@ export interface RouterFeature<FeatureKind extends RouterFeatureKind> {
 }
 
 // @public
-export type RouterFeatures = PreloadingFeature | DebugTracingFeature | InitialNavigationFeature | InMemoryScrollingFeature | RouterConfigurationFeature | NavigationErrorHandlerFeature | ComponentInputBindingFeature;
+export type RouterFeatures = PreloadingFeature | DebugTracingFeature | InitialNavigationFeature | InMemoryScrollingFeature | RouterConfigurationFeature | NavigationErrorHandlerFeature | ComponentInputBindingFeature | ViewTransitionsFeature;
 
 // @public
 export type RouterHashLocationFeature = RouterFeature<RouterFeatureKind.RouterHashLocationFeature>;
@@ -1098,6 +1086,9 @@ export class UrlTree {
 export const VERSION: Version;
 
 // @public
+export type ViewTransitionsFeature = RouterFeature<RouterFeatureKind.ViewTransitionsFeature>;
+
+// @public
 export function withComponentInputBinding(): ComponentInputBindingFeature;
 
 // @public
@@ -1123,6 +1114,9 @@ export function withPreloading(preloadingStrategy: Type<PreloadingStrategy>): Pr
 
 // @public
 export function withRouterConfig(options: RouterConfigOptions): RouterConfigurationFeature;
+
+// @public
+export function withViewTransitions(options?: ViewTransitionsFeatureOptions): ViewTransitionsFeature;
 
 // (No @packageDocumentation comment for this package)
 

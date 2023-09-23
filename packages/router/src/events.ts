@@ -8,6 +8,7 @@
 
 import {Route} from './models';
 import {ActivatedRouteSnapshot, RouterStateSnapshot} from './router_state';
+import {UrlTree} from './url_tree';
 
 /**
  * Identifies the call or event that triggered a navigation.
@@ -432,7 +433,7 @@ export class ResolveStart extends RouterEvent {
 
 /**
  * An event triggered at the end of the Resolve phase of routing.
- * @see {@link ResolveStart}.
+ * @see {@link ResolveStart}
  *
  * @publicApi
  */
@@ -595,6 +596,12 @@ export class Scroll {
     return `Scroll(anchor: '${this.anchor}', position: '${pos}')`;
   }
 }
+
+export class BeforeActivateRoutes {}
+export class RedirectRequest {
+  constructor(readonly url: UrlTree) {}
+}
+export type PrivateRouterEvents = BeforeActivateRoutes|RedirectRequest;
 
 /**
  * Router events that allow you to track the lifecycle of the router.

@@ -124,9 +124,13 @@ class _TreeBuilder {
 
   private _consumeComment(token: CommentStartToken) {
     const text = this._advanceIf(TokenType.RAW_TEXT);
-    this._advanceIf(TokenType.COMMENT_END);
+    const endToken = this._advanceIf(TokenType.COMMENT_END);
     const value = text != null ? text.parts[0].trim() : null;
-    this._addToParent(new html.Comment(value, token.sourceSpan));
+    const sourceSpan = endToken == null ?
+        token.sourceSpan :
+        new ParseSourceSpan(
+            token.sourceSpan.start, endToken.sourceSpan.end, token.sourceSpan.fullStart);
+    this._addToParent(new html.Comment(value, sourceSpan));
   }
 
   private _consumeExpansion(token: ExpansionFormStartToken) {
@@ -244,7 +248,7 @@ class _TreeBuilder {
       if (parent instanceof html.BlockGroup) {
         this.errors.push(TreeError.create(
             null, startSpan, 'Text cannot be placed directly inside of a block group.'));
-        return null;
+        return;
       }
 
       if (parent != null && parent.children.length === 0 &&

@@ -85,6 +85,8 @@ export const enum RuntimeErrorCode {
     // (undocumented)
     MISSING_REQUIRED_INJECTABLE_IN_BOOTSTRAP = 402,
     // (undocumented)
+    MISSING_SSR_CONTENT_INTEGRITY_MARKER = -507,
+    // (undocumented)
     MISSING_ZONEJS = 908,
     // (undocumented)
     MULTIPLE_COMPONENTS_MATCH = -300,
@@ -107,11 +109,15 @@ export const enum RuntimeErrorCode {
     // (undocumented)
     RECURSIVE_APPLICATION_REF_TICK = 101,
     // (undocumented)
+    RECURSIVE_APPLICATION_RENDER = 102,
+    // (undocumented)
     RENDERER_NOT_FOUND = 407,
     // (undocumented)
     REQUIRE_SYNC_WITHOUT_SYNC_EMIT = 601,
     // (undocumented)
     RUNTIME_DEPS_INVALID_IMPORTED_TYPE = 1000,
+    // (undocumented)
+    RUNTIME_DEPS_ORPHAN_COMPONENT = 1001,
     // (undocumented)
     SIGNAL_WRITE_FROM_ILLEGAL_CONTEXT = 600,
     // (undocumented)

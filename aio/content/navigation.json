@@ -228,6 +228,11 @@
                   "url": "guide/pipes-transform-data",
                   "title": "Transforming data with parameters and chained pipes",
                   "tooltip": "Learn how to use a pipe transform data."
+                },
+                {
+                  "url": "guide/pipe-precedence",
+                  "title": "Pipe precedence in template expressions",
+                  "tooltip": "How to use pipes within a ternary operator expression."
                 }
               ]
             },
@@ -445,11 +450,6 @@
               "tooltip": "Setup a server communication for HTTP"
             },
             {
-              "url": "guide/http-server-communication",
-              "title": "Communicating with backend services",
-              "tooltip": "Understanding communicating with backend services using HTTP"
-            },
-            {
               "url": "guide/http-request-data-from-server",
               "title": "Request data from a server",
               "tooltip": "Learn how to request data from the server via the HTTP client"
@@ -642,11 +642,6 @@
                   "tooltip": "Introduces the optional Angular internationalization tasks and lists topics that teach you how to manually configure localization settings for your applications"
                 },
                 {
-                  "url": "guide/i18n-optional-manual-runtime-locale",
-                  "title": "Set the runtime locale manually",
-                  "tooltip": "Set the runtime locale manually"
-                },
-                {
                   "url": "guide/i18n-optional-import-global-variants",
                   "title": "Import global variants of the locale data",
                   "tooltip": "Import global variants of the locale data"
@@ -706,11 +701,6 @@
               "tooltip": "Enabling the service worker in a CLI project and observing behavior in the browser."
             },
             {
-              "url": "guide/app-shell",
-              "title": "App shell",
-              "tooltip": "Render a portion of your app quickly to improve the startup experience."
-            },
-            {
               "url": "guide/service-worker-communications",
               "title": "Service worker communication",
               "tooltip": "Services that enable you to interact with an Angular service worker."
@@ -729,6 +719,11 @@
               "url": "guide/service-worker-config",
               "title": "Service worker configuration",
               "tooltip": "Configuring service worker caching behavior."
+            },
+            {
+              "url": "guide/app-shell",
+              "title": "App shell",
+              "tooltip": "Render a portion of your app quickly to improve the startup experience."
             }
           ]
         },
@@ -1252,6 +1247,11 @@
                   "tooltip": "Understand the details of NgModules."
                 },
                 {
+                  "url": "guide/universal-ngmodule",
+                  "title": "Server-side rendering with NgModule applications",
+                  "tooltip": "Render HTML server-side with Angular Universal (using NgModule)."
+                },
+                {
                   "url": "guide/ngmodule-faq",
                   "title": "NgModule FAQs",
                   "tooltip": "Answers to frequently asked questions about NgModules."
@@ -1525,7 +1525,7 @@
         {
           "url": "https://github.com/angular/angular/issues",
           "title": "Report Issues",
-          "tooltip": "Post issues and suggestions on github."
+          "tooltip": "Post issues and suggestions on GitHub."
         },
         {
           "url": "https://github.com/angular/code-of-conduct/blob/main/CODE_OF_CONDUCT.md",

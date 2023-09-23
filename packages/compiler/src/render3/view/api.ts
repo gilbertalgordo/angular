@@ -167,6 +167,44 @@ export const enum DeclarationListEmitMode {
    * ```
    */
   ClosureResolved,
+
+  RuntimeResolved,
+}
+
+/**
+ * Describes a dependency used within a `{#defer}` block.
+ */
+export interface R3DeferBlockTemplateDependency {
+  /**
+   * Reference to a dependency.
+   */
+  type: o.WrappedNodeExpr<unknown>;
+
+  /**
+   * Dependency class name.
+   */
+  symbolName: string;
+
+  /**
+   * Whether this dependency can be defer-loaded.
+   */
+  isDeferrable: boolean;
+
+  /**
+   * Import path where this dependency is located.
+   */
+  importPath: string|null;
+}
+
+/**
+ * Information necessary to compile a `defer` block.
+ */
+export interface R3DeferBlockMetadata {
+  /** Dependencies used within the block. */
+  deps: R3DeferBlockTemplateDependency[];
+
+  /** Mapping between triggers and the DOM nodes they refer to. */
+  triggerElements: Map<t.DeferredTrigger, t.Element|null>;
 }
 
 /**
@@ -191,6 +229,18 @@ export interface R3ComponentMetadata<DeclarationT extends R3TemplateDependency> 
   };
 
   declarations: DeclarationT[];
+
+  /**
+   * Map of all types that can be defer loaded (ts.ClassDeclaration) ->
+   * corresponding import declaration (ts.ImportDeclaration) within
+   * the current source file.
+   */
+  deferrableDeclToImportDecl: Map<o.Expression, o.Expression>;
+
+  /**
+   * Map of {#defer} blocks -> their corresponding metadata.
+   */
+  deferBlocks: Map<t.DeferredBlock, R3DeferBlockMetadata>;
 
   /**
    * Specifies how the 'directives' and/or `pipes` array, if generated, need to be emitted.
@@ -244,6 +294,13 @@ export interface R3ComponentMetadata<DeclarationT extends R3TemplateDependency> 
    * Strategy used for detecting changes in the component.
    */
   changeDetection?: ChangeDetectionStrategy;
+
+  /**
+   * The imports expression as appears on the component decorate for standalone component. This
+   * field is currently needed only for local compilation, and so in other compilation modes it may
+   * not be set. If component has empty array imports then this field is not set.
+   */
+  rawImports?: o.Expression;
 }
 
 /**

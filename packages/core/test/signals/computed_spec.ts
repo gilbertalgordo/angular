@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {computed, signal, Watch} from '@angular/core/src/signals';
+import {computed, signal, watch} from '@angular/core/src/signals';
 
 describe('computed', () => {
   it('should create computed', () => {
@@ -60,12 +60,14 @@ describe('computed', () => {
 
   it('should evaluate computed only when subscribing', () => {
     const name = signal('John');
+    const age = signal(25);
     const show = signal(true);
 
     let computeCount = 0;
-    const displayName = computed(() => `${show() ? name() : 'anonymous'}:${++computeCount}`);
+    const displayName =
+        computed(() => `${show() ? `${name()} aged ${age()}` : 'anonymous'}:${++computeCount}`);
 
-    expect(displayName()).toEqual('John:1');
+    expect(displayName()).toEqual('John aged 25:1');
 
     show.set(false);
     expect(displayName()).toEqual('anonymous:2');
@@ -136,7 +138,7 @@ describe('computed', () => {
     const derived = computed(() => source().toUpperCase());
 
     let watchCount = 0;
-    const watch = new Watch(
+    const w = watch(
         () => {
           derived();
         },
@@ -145,7 +147,7 @@ describe('computed', () => {
         },
         false);
 
-    watch.run();
+    w.run();
     expect(watchCount).toEqual(0);
 
     // change signal, mark downstream dependencies dirty
@@ -157,7 +159,7 @@ describe('computed', () => {
     expect(watchCount).toEqual(1);
 
     // resetting dependencies back to clean
-    watch.run();
+    w.run();
     expect(watchCount).toEqual(1);
 
     // expecting another notification at this point
@@ -165,7 +167,16 @@ describe('computed', () => {
     expect(watchCount).toEqual(2);
   });
 
-  it('should disallow writing to signals within computeds', () => {
+  it('should allow signal creation within computed', () => {
+    const doubleCounter = computed(() => {
+      const counter = signal(1);
+      return counter() * 2;
+    });
+
+    expect(doubleCounter()).toBe(2);
+  });
+
+  it('should disallow writing to signals within computed', () => {
     const source = signal(0);
     const illegal = computed(() => {
       source.set(1);

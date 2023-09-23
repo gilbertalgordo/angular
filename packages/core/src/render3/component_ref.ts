@@ -26,11 +26,11 @@ import {assertDefined, assertGreaterThan, assertIndexInRange} from '../util/asse
 import {VERSION} from '../version';
 import {NOT_FOUND_CHECK_ONLY_ELEMENT_INJECTOR} from '../view/provider_flags';
 
+import {AfterRenderEventManager} from './after_render_hooks';
 import {assertComponentType} from './assert';
 import {attachPatchData} from './context_discovery';
 import {getComponentDef} from './definition';
 import {getNodeInjectable, NodeInjector} from './di';
-import {throwProviderNotFoundError} from './errors_di';
 import {registerPostOrderHooks} from './hooks';
 import {reportUnknownPropertyError} from './instructions/element_validation';
 import {markViewDirty} from './instructions/mark_view_dirty';
@@ -44,7 +44,7 @@ import {CONTEXT, HEADER_OFFSET, INJECTOR, LView, LViewEnvironment, LViewFlags, T
 import {MATH_ML_NAMESPACE, SVG_NAMESPACE} from './namespaces';
 import {createElementNode, setupStaticAttributes, writeDirectClass} from './node_manipulation';
 import {extractAttrsAndClassesFromSelector, stringifyCSSSelectorList} from './node_selector_matcher';
-import {EffectManager} from './reactivity/effect';
+import {EffectScheduler} from './reactivity/effect';
 import {enterView, getCurrentTNode, getLView, leaveView} from './state';
 import {computeStaticStyling} from './styling/static_styling';
 import {mergeHostAttrs, setUpAttributes} from './util/attrs_utils';
@@ -87,8 +87,8 @@ function getNamespace(elementName: string): string|null {
  * Injector that looks up a value using a specific injector, before falling back to the module
  * injector. Used primarily when creating components or embedded views dynamically.
  */
-class ChainedInjector implements Injector {
-  constructor(private injector: Injector, private parentInjector: Injector) {}
+export class ChainedInjector implements Injector {
+  constructor(public injector: Injector, public parentInjector: Injector) {}
 
   get<T>(token: ProviderToken<T>, notFoundValue?: T, flags?: InjectFlags|InjectOptions): T {
     flags = convertToBitFlags(flags);
@@ -188,12 +188,14 @@ export class ComponentFactory<T> extends AbstractComponentFactory<T> {
     }
     const sanitizer = rootViewInjector.get(Sanitizer, null);
 
-    const effectManager = rootViewInjector.get(EffectManager, null);
+    const afterRenderEventManager = rootViewInjector.get(AfterRenderEventManager, null);
 
     const environment: LViewEnvironment = {
       rendererFactory,
       sanitizer,
-      effectManager,
+      // We don't use inline effects (yet).
+      inlineEffectRunner: null,
+      afterRenderEventManager,
     };
 
     const hostRenderer = rendererFactory.createRenderer(null, this.componentDef);
@@ -212,12 +214,17 @@ export class ComponentFactory<T> extends AbstractComponentFactory<T> {
                                                       LViewFlags.CheckAlways | LViewFlags.IsRoot;
     const rootFlags = this.componentDef.signals ? signalFlags : nonSignalFlags;
 
+    let hydrationInfo: DehydratedView|null = null;
+    if (hostRNode !== null) {
+      hydrationInfo = retrieveHydrationInfo(hostRNode, rootViewInjector, true /* isRootView */);
+    }
+
     // Create the root view. Uses empty TView and ContentTemplate.
     const rootTView =
         createTView(TViewType.Root, null, null, 1, 0, null, null, null, null, null, null);
     const rootLView = createLView(
         null, rootTView, null, rootFlags, null, null, environment, hostRenderer, rootViewInjector,
-        null, null);
+        null, hydrationInfo);
 
     // rootView is the parent when bootstrapping
     // TODO(misko): it looks like we are entering view here but we don't really need to as
@@ -347,13 +354,6 @@ export class ComponentRef<T> extends AbstractComponentRef<T> {
 /** Represents a HostFeature function. */
 type HostFeature = (<T>(component: T, componentDef: ComponentDef<T>) => void);
 
-// TODO: A hack to not pull in the NullInjector from @angular/core.
-export const NULL_INJECTOR: Injector = {
-  get: (token: any, notFoundValue?: any) => {
-    throwProviderNotFoundError(token, 'NullInjector');
-  }
-};
-
 /** Creates a TNode that can be used to instantiate a root component. */
 function createRootComponentTNode(lView: LView, rNode: RNode): TElementNode {
   const tView = lView[TVIEW];
@@ -386,7 +386,7 @@ function createRootComponentView(
   const tView = rootView[TVIEW];
   applyRootComponentStyling(rootDirectives, tNode, hostRNode, hostRenderer);
 
-  // Hydration info is on the host element and needs to be retreived
+  // Hydration info is on the host element and needs to be retrieved
   // and passed to the component LView.
   let hydrationInfo: DehydratedView|null = null;
   if (hostRNode !== null) {

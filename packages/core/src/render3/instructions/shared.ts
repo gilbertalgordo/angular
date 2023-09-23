@@ -10,14 +10,15 @@ import {Injector} from '../../di/injector';
 import {ErrorHandler} from '../../error_handler';
 import {RuntimeError, RuntimeErrorCode} from '../../errors';
 import {DehydratedView} from '../../hydration/interfaces';
-import {hasInSkipHydrationBlockFlag, hasSkipHydrationAttrOnRElement, SKIP_HYDRATION_ATTR_NAME} from '../../hydration/skip_hydration';
+import {hasSkipHydrationAttrOnRElement} from '../../hydration/skip_hydration';
 import {PRESERVE_HOST_CONTENT, PRESERVE_HOST_CONTENT_DEFAULT} from '../../hydration/tokens';
 import {processTextNodeMarkersBeforeHydration} from '../../hydration/utils';
 import {DoCheck, OnChanges, OnInit} from '../../interface/lifecycle_hooks';
+import {Writable} from '../../interface/type';
 import {SchemaMetadata} from '../../metadata/schema';
 import {ViewEncapsulation} from '../../metadata/view';
 import {validateAgainstEventAttributes, validateAgainstEventProperties} from '../../sanitization/sanitization';
-import {setActiveConsumer} from '../../signals';
+import {consumerAfterComputation, consumerBeforeComputation, setActiveConsumer} from '../../signals';
 import {assertDefined, assertEqual, assertGreaterThan, assertGreaterThanOrEqual, assertIndexInRange, assertNotEqual, assertNotSame, assertSame, assertString} from '../../util/assert';
 import {escapeCommentText} from '../../util/dom';
 import {normalizeDebugBindingName, normalizeDebugBindingValue} from '../../util/ng_reflect';
@@ -42,7 +43,7 @@ import {clearElementContents, updateTextNode} from '../node_manipulation';
 import {isInlineTemplate, isNodeMatchingSelectorList} from '../node_selector_matcher';
 import {profiler, ProfilerEvent} from '../profiler';
 import {commitLViewConsumerIfHasProducers, getReactiveLViewConsumer} from '../reactive_lview_consumer';
-import {getBindingsEnabled, getCurrentDirectiveIndex, getCurrentParentTNode, getCurrentTNodePlaceholderOk, getSelectedIndex, isCurrentTNodeParent, isInCheckNoChangesMode, isInI18nBlock, isInSkipHydrationBlock, leaveView, setBindingRootForHostBindings, setCurrentDirectiveIndex, setCurrentQueryIndex, setCurrentTNode, setSelectedIndex} from '../state';
+import {getBindingsEnabled, getCurrentDirectiveIndex, getCurrentParentTNode, getCurrentTNodePlaceholderOk, getSelectedIndex, isCurrentTNodeParent, isInCheckNoChangesMode, isInI18nBlock, isInSkipHydrationBlock, setBindingRootForHostBindings, setCurrentDirectiveIndex, setCurrentQueryIndex, setCurrentTNode, setSelectedIndex} from '../state';
 import {NO_CHANGE} from '../tokens';
 import {mergeHostAttrs} from '../util/attrs_utils';
 import {INTERPOLATION_DELIMITER} from '../util/misc_utils';
@@ -78,8 +79,14 @@ export function processHostBindingOpCodes(tView: TView, lView: LView): void {
         const bindingRootIndx = hostBindingOpCodes[++i] as number;
         const hostBindingFn = hostBindingOpCodes[++i] as HostBindingsFunction<any>;
         setBindingRootForHostBindings(bindingRootIndx, directiveIdx);
-        const context = lView[directiveIdx];
-        consumer.runInContext(hostBindingFn, RenderFlags.Update, context);
+        consumer.dirty = false;
+        const prevConsumer = consumerBeforeComputation(consumer);
+        try {
+          const context = lView[directiveIdx];
+          hostBindingFn(RenderFlags.Update, context);
+        } finally {
+          consumerAfterComputation(consumer, prevConsumer);
+        }
       }
     }
   } finally {
@@ -94,7 +101,7 @@ export function createLView<T>(
     parentLView: LView|null, tView: TView, context: T|null, flags: LViewFlags, host: RElement|null,
     tHostNode: TNode|null, environment: LViewEnvironment|null, renderer: Renderer|null,
     injector: Injector|null, embeddedViewInjector: Injector|null,
-    hydrationInfo: DehydratedView|null): LView {
+    hydrationInfo: DehydratedView|null): LView<T> {
   const lView = tView.blueprint.slice() as LView;
   lView[HOST] = host;
   lView[FLAGS] = flags | LViewFlags.CreationMode | LViewFlags.Attached | LViewFlags.FirstLViewPass;
@@ -122,7 +129,7 @@ export function createLView<T>(
           'Embedded views must have parentLView');
   lView[DECLARATION_COMPONENT_VIEW] =
       tView.type == TViewType.Embedded ? parentLView![DECLARATION_COMPONENT_VIEW] : lView;
-  return lView;
+  return lView as LView<T>;
 }
 
 /**
@@ -262,15 +269,15 @@ export function executeTemplate<T>(
     const preHookType =
         isUpdatePhase ? ProfilerEvent.TemplateUpdateStart : ProfilerEvent.TemplateCreateStart;
     profiler(preHookType, context as unknown as {});
-    if (isUpdatePhase) {
-      consumer.runInContext(templateFn, rf, context);
-    } else {
-      const prevConsumer = setActiveConsumer(null);
-      try {
-        templateFn(rf, context);
-      } finally {
-        setActiveConsumer(prevConsumer);
+    const effectiveConsumer = isUpdatePhase ? consumer : null;
+    const prevConsumer = consumerBeforeComputation(effectiveConsumer);
+    try {
+      if (effectiveConsumer !== null) {
+        effectiveConsumer.dirty = false;
       }
+      templateFn(rf, context);
+    } finally {
+      consumerAfterComputation(effectiveConsumer, prevConsumer);
     }
   } finally {
     if (isUpdatePhase && lView[REACTIVE_TEMPLATE_CONSUMER] === null) {
@@ -1210,7 +1217,7 @@ export function configureViewWithDirective<T>(
       assertGreaterThanOrEqual(directiveIndex, HEADER_OFFSET, 'Must be in Expando section');
   tView.data[directiveIndex] = def;
   const directiveFactory =
-      def.factory || ((def as {factory: Function}).factory = getFactoryDef(def.type, true));
+      def.factory || ((def as Writable<DirectiveDef<T>>).factory = getFactoryDef(def.type, true));
   // Even though `directiveFactory` will already be using `ɵɵdirectiveInject` in its generated code,
   // we also want to support `inject()` directly from the directive constructor context so we set
   // `ɵɵdirectiveInject` as the inject implementation here too.

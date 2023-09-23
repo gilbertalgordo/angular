@@ -7,7 +7,7 @@
  */
 
 import {AnimationBuilder} from '@angular/animations';
-import {AnimationDriver, ɵAnimationEngine as AnimationEngine, ɵAnimationStyleNormalizer as AnimationStyleNormalizer, ɵNoopAnimationDriver as NoopAnimationDriver, ɵWebAnimationsDriver as WebAnimationsDriver, ɵWebAnimationsStyleNormalizer as WebAnimationsStyleNormalizer} from '@angular/animations/browser';
+import {AnimationDriver, NoopAnimationDriver, ɵAnimationEngine as AnimationEngine, ɵAnimationStyleNormalizer as AnimationStyleNormalizer, ɵWebAnimationsDriver as WebAnimationsDriver, ɵWebAnimationsStyleNormalizer as WebAnimationsStyleNormalizer} from '@angular/animations/browser';
 import {DOCUMENT} from '@angular/common';
 import {ANIMATION_MODULE_TYPE, ApplicationRef, Inject, Injectable, NgZone, OnDestroy, Provider, RendererFactory2} from '@angular/core';
 import {ɵDomRendererFactory2 as DomRendererFactory2} from '@angular/platform-browser';
@@ -21,9 +21,9 @@ export class InjectableAnimationEngine extends AnimationEngine implements OnDest
   // Since the `ApplicationRef` should be created earlier before the `AnimationEngine`, they
   // both have `ngOnDestroy` hooks and `flush()` must be called after all views are destroyed.
   constructor(
-      @Inject(DOCUMENT) doc: any, driver: AnimationDriver, normalizer: AnimationStyleNormalizer,
-      appRef: ApplicationRef) {
-    super(doc.body, driver, normalizer);
+      @Inject(DOCUMENT) doc: Document, driver: AnimationDriver,
+      normalizer: AnimationStyleNormalizer, appRef: ApplicationRef) {
+    super(doc, driver, normalizer);
   }
 
   ngOnDestroy(): void {

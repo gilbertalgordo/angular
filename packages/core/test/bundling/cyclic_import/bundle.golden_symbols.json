@@ -12,6 +12,9 @@
     "name": "APP_INITIALIZER"
   },
   {
+    "name": "AfterRenderEventManager"
+  },
+  {
     "name": "AnonymousSubject"
   },
   {
@@ -130,9 +133,6 @@
   },
   {
     "name": "EVENT_MANAGER_PLUGINS"
-  },
-  {
-    "name": "EffectManager"
   },
   {
     "name": "ElementRef"
@@ -267,9 +267,6 @@
     "name": "NG_TEMPLATE_SELECTOR"
   },
   {
-    "name": "NOOP_CLEANUP_FN"
-  },
-  {
     "name": "NOT_FOUND"
   },
   {
@@ -342,13 +339,10 @@
     "name": "R3Injector"
   },
   {
+    "name": "REACTIVE_LVIEW_CONSUMER_NODE"
+  },
+  {
     "name": "REMOVE_STYLES_ON_COMPONENT_DESTROY"
-  },
-  {
-    "name": "ReactiveLViewConsumer"
-  },
-  {
-    "name": "ReactiveNode"
   },
   {
     "name": "RefCountOperator"
@@ -456,12 +450,6 @@
     "name": "ViewRef"
   },
   {
-    "name": "Watch"
-  },
-  {
-    "name": "WeakRefImpl"
-  },
-  {
     "name": "ZONE_IS_STABLE_OBSERVABLE"
   },
   {
@@ -499,9 +487,6 @@
   },
   {
     "name": "_locateOrCreateElementNode"
-  },
-  {
-    "name": "_nextReactiveId"
   },
   {
     "name": "_platformInjector"
@@ -552,6 +537,9 @@
     "name": "applyView"
   },
   {
+    "name": "assertConsumerNode"
+  },
+  {
     "name": "attachPatchData"
   },
   {
@@ -585,6 +573,9 @@
     "name": "collectNativeNodes"
   },
   {
+    "name": "collectNativeNodesInLContainer"
+  },
+  {
     "name": "commitLViewConsumerIfHasProducers"
   },
   {
@@ -601,6 +592,18 @@
   },
   {
     "name": "connectableObservableDescriptor"
+  },
+  {
+    "name": "consumerAfterComputation"
+  },
+  {
+    "name": "consumerBeforeComputation"
+  },
+  {
+    "name": "consumerDestroy"
+  },
+  {
+    "name": "consumerIsLive"
   },
   {
     "name": "convertToBitFlags"
@@ -622,6 +625,9 @@
   },
   {
     "name": "createLView"
+  },
+  {
+    "name": "createLViewConsumer"
   },
   {
     "name": "createNodeInjector"
@@ -661,6 +667,9 @@
   },
   {
     "name": "diPublicInInjector"
+  },
+  {
+    "name": "disableStylesheet"
   },
   {
     "name": "empty"
@@ -858,9 +867,6 @@
     "name": "importProvidersFrom"
   },
   {
-    "name": "inNotificationPhase"
-  },
-  {
     "name": "includeViewProviders"
   },
   {
@@ -1053,6 +1059,9 @@
     "name": "noSideEffects"
   },
   {
+    "name": "nonNegativeNumber"
+  },
+  {
     "name": "nonNull"
   },
   {
@@ -1081,6 +1090,9 @@
   },
   {
     "name": "processInjectorTypesWithProviders"
+  },
+  {
+    "name": "producerRemoveLiveConsumerAtIndex"
   },
   {
     "name": "profiler"

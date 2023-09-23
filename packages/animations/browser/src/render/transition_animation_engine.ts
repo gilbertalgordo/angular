@@ -6,6 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 import {AnimationOptions, AnimationPlayer, AUTO_STYLE, NoopAnimationPlayer, ɵAnimationGroupPlayer as AnimationGroupPlayer, ɵPRE_STYLE as PRE_STYLE, ɵStyleDataMap} from '@angular/animations';
+import {ɵWritable as Writable} from '@angular/core';
 
 import {AnimationTimelineInstruction} from '../dsl/animation_timeline_instruction';
 import {AnimationTransitionFactory} from '../dsl/animation_transition_factory';
@@ -48,7 +49,7 @@ interface TriggerListener {
   callback: (event: any) => any;
 }
 
-export interface QueueInstruction {
+interface QueueInstruction {
   element: any;
   triggerName: string;
   fromState: StateValue;
@@ -58,9 +59,9 @@ export interface QueueInstruction {
   isFallbackTransition: boolean;
 }
 
-export const REMOVAL_FLAG = '__ng_removed';
+const REMOVAL_FLAG = '__ng_removed';
 
-export interface ElementAnimationState {
+interface ElementAnimationState {
   setForRemoval: boolean;
   setForMove: boolean;
   hasAnimation: boolean;
@@ -69,7 +70,7 @@ export interface ElementAnimationState {
   previousTriggersValues?: Map<string, string>;
 }
 
-export class StateValue {
+class StateValue {
   public value: string;
   public options: AnimationOptions;
 
@@ -106,10 +107,10 @@ export class StateValue {
   }
 }
 
-export const VOID_VALUE = 'void';
-export const DEFAULT_STATE_VALUE = new StateValue(VOID_VALUE);
+const VOID_VALUE = 'void';
+const DEFAULT_STATE_VALUE = new StateValue(VOID_VALUE);
 
-export class AnimationTransitionNamespace {
+class AnimationTransitionNamespace {
   public players: TransitionAnimationPlayer[] = [];
 
   private _triggers = new Map<string, AnimationTrigger>();
@@ -510,7 +511,7 @@ export class AnimationTransitionNamespace {
   }
 }
 
-export interface QueuedTransition {
+interface QueuedTransition {
   element: any;
   instruction: AnimationTransitionInstruction;
   player: TransitionAnimationPlayer;
@@ -1496,7 +1497,7 @@ export class TransitionAnimationPlayer implements AnimationPlayer {
     this._queuedCallbacks.clear();
     this._containsRealPlayer = true;
     this.overrideTotalTime(player.totalTime);
-    (this as {queued: boolean}).queued = false;
+    (this as Writable<this>).queued = false;
   }
 
   getRealPlayer() {

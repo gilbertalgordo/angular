@@ -11,6 +11,7 @@ import {RuntimeErrorCode} from '@angular/common/src/errors';
 import {PLATFORM_SERVER_ID} from '@angular/common/src/platform_id';
 import {Component, PLATFORM_ID, Provider, Type} from '@angular/core';
 import {ComponentFixture, TestBed} from '@angular/core/testing';
+import {DomSanitizer, SafeResourceUrl} from '@angular/platform-browser';
 import {expect} from '@angular/platform-browser/testing/src/matchers';
 import {withHead} from '@angular/private/testing';
 
@@ -720,6 +721,30 @@ describe('Image directive', () => {
         fixture.detectChanges();
       }).not.toThrowError(new RegExp('was updated after initialization'));
     });
+    it('should accept a safeUrl ngSrc value', () => {
+      @Component({
+        selector: 'test-cmp',
+        template: `<img
+              [ngSrc]="bypassImage"
+              width="400"
+              height="600"
+            >`
+      })
+      class TestComponent {
+        rawImage = `javascript:alert("Hi there")`;
+        bypassImage: SafeResourceUrl;
+        constructor(private sanitizer: DomSanitizer) {
+          this.bypassImage = sanitizer.bypassSecurityTrustResourceUrl(this.rawImage);
+        }
+      }
+      setupTestingModule({component: TestComponent});
+      const fixture = TestBed.createComponent(TestComponent);
+      fixture.detectChanges();
+
+      let nativeElement = fixture.nativeElement as HTMLElement;
+      let img = nativeElement.querySelector('img')!;
+      expect(img.src).toContain(`${IMG_BASE_URL}/javascript:alert`);
+    });
   });
 
   describe('lazy loading', () => {
@@ -1162,8 +1187,8 @@ describe('Image directive', () => {
     //   transforms2: {example2: "bar"}
     // }
     const nestedImageLoader = (config: ImageLoaderConfig) => {
-      return `${config.src}/${config.loaderParams?.transforms1.example1}/${
-          config.loaderParams?.transforms2.example2}`;
+      return `${config.src}/${config.loaderParams?.['transforms1'].example1}/${
+          config.loaderParams?.['transforms2'].example2}`;
     };
 
     it('should set `src` to match `ngSrc` if image loader is not provided', () => {
@@ -1375,7 +1400,7 @@ describe('Image directive', () => {
     it('should pass data payload from loaderParams to custom image loaders', () => {
       setupTestingModule({imageLoader: imageLoaderWithData});
       const template = `
-        <img ngSrc="${IMG_BASE_URL}/img.png" width="150" height="50" 
+        <img ngSrc="${IMG_BASE_URL}/img.png" width="150" height="50"
           [loaderParams]="{testProp1: 'testValue1', testProp2: 'testValue2'}" />
       `;
       const fixture = createTestComponent(template);

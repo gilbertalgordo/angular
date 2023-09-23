@@ -30,6 +30,7 @@ export const enum RuntimeErrorCode {
   // Change Detection Errors
   EXPRESSION_CHANGED_AFTER_CHECKED = -100,
   RECURSIVE_APPLICATION_REF_TICK = 101,
+  RECURSIVE_APPLICATION_RENDER = 102,
 
   // Dependency Injection Errors
   CYCLIC_DI_DEPENDENCY = -200,
@@ -77,6 +78,7 @@ export const enum RuntimeErrorCode {
   INVALID_SKIP_HYDRATION_HOST = -504,
   MISSING_HYDRATION_ANNOTATIONS = -505,
   HYDRATION_STABLE_TIMEDOUT = -506,
+  MISSING_SSR_CONTENT_INTEGRITY_MARKER = -507,
 
   // Signal Errors
   SIGNAL_WRITE_FROM_ILLEGAL_CONTEXT = 600,
@@ -111,6 +113,7 @@ export const enum RuntimeErrorCode {
 
   // Runtime dependency tracker errors
   RUNTIME_DEPS_INVALID_IMPORTED_TYPE = 1000,
+  RUNTIME_DEPS_ORPHAN_COMPONENT = 1001,
 }
 
 

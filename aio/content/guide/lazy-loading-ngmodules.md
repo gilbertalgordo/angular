@@ -75,13 +75,6 @@ ng new customer-app --routing
 This creates an application called `customer-app` and the `--routing` flag generates a file called `app-routing.module.ts`. This is one of the files you need for setting up lazy loading for your feature module.
 Navigate into the project by issuing the command `cd customer-app`.
 
-<div class="alert is-helpful">
-
-The `--routing` option requires Angular CLI version 8.1 or higher.
-See [Keeping Up to Date](guide/updating).
-
-</div>
-
 ### Create a feature module with routing
 
 Next, you need a feature module with a component to route to.
@@ -104,17 +97,6 @@ Instead, it adds the declared route, `customers` to the `routes` array declared 
 
 Notice that the lazy-loading syntax uses `loadChildren` followed by a function that uses the browser's built-in `import('...')` syntax for dynamic imports.
 The import path is the relative path to the module.
-
-<div class="callout is-helpful">
-
-<header>String-based lazy loading</header>
-
-In Angular version 8, the string syntax for the `loadChildren` route specification [was deprecated](guide/deprecations#loadchildren-string-syntax) in favor of the `import()` syntax.
-You can opt into using string-based lazy loading \(`loadChildren: './path/to/module#Module'`\) by including the lazy-loaded routes in your `tsconfig` file, which includes the lazy-loaded files in the compilation.
-
-By default the Angular CLI generates projects with stricter file inclusions intended to be used with the `import()` syntax.
-
-</div>
 
 ### Add another feature module
 
@@ -251,7 +233,7 @@ For more information, see the [`forRoot()` pattern](guide/singleton-services#for
 ## Preloading
 
 Preloading improves UX by loading parts of your application in the background.
-You can preload modules, standalone components or component data. 
+You can preload modules, standalone components or component data.
 
 ### Preloading modules and standalone components
 

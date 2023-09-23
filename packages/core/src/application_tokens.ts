@@ -51,7 +51,8 @@ const DEFAULT_APP_ID = 'ng';
  * A function that is executed when a platform is initialized.
  * @publicApi
  */
-export const PLATFORM_INITIALIZER = new InjectionToken<Array<() => void>>('Platform Initializer');
+export const PLATFORM_INITIALIZER =
+    new InjectionToken<ReadonlyArray<() => void>>('Platform Initializer');
 
 /**
  * A token that indicates an opaque platform ID.
@@ -66,6 +67,7 @@ export const PLATFORM_ID = new InjectionToken<Object>('Platform ID', {
  * A [DI token](guide/glossary#di-token "DI token definition") that indicates the root directory of
  * the application
  * @publicApi
+ * @deprecated
  */
 export const PACKAGE_ROOT_URL = new InjectionToken<string>('Application Packages Root URL');
 

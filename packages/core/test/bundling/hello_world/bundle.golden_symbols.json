@@ -9,6 +9,9 @@
     "name": "APP_INITIALIZER"
   },
   {
+    "name": "AfterRenderEventManager"
+  },
+  {
     "name": "AnonymousSubject"
   },
   {
@@ -79,9 +82,6 @@
   },
   {
     "name": "ENVIRONMENT_INITIALIZER"
-  },
-  {
-    "name": "EffectManager"
   },
   {
     "name": "ElementRef"
@@ -189,9 +189,6 @@
     "name": "NG_TEMPLATE_SELECTOR"
   },
   {
-    "name": "NOOP_CLEANUP_FN"
-  },
-  {
     "name": "NOT_FOUND"
   },
   {
@@ -261,10 +258,7 @@
     "name": "R3Injector"
   },
   {
-    "name": "ReactiveLViewConsumer"
-  },
-  {
-    "name": "ReactiveNode"
+    "name": "REACTIVE_LVIEW_CONSUMER_NODE"
   },
   {
     "name": "RefCountOperator"
@@ -348,12 +342,6 @@
     "name": "ViewRef"
   },
   {
-    "name": "Watch"
-  },
-  {
-    "name": "WeakRefImpl"
-  },
-  {
     "name": "ZONE_IS_STABLE_OBSERVABLE"
   },
   {
@@ -382,9 +370,6 @@
   },
   {
     "name": "_injectImplementation"
-  },
-  {
-    "name": "_nextReactiveId"
   },
   {
     "name": "_platformInjector"
@@ -420,6 +405,9 @@
     "name": "applyView"
   },
   {
+    "name": "assertConsumerNode"
+  },
+  {
     "name": "attachPatchData"
   },
   {
@@ -450,6 +438,9 @@
     "name": "collectNativeNodes"
   },
   {
+    "name": "collectNativeNodesInLContainer"
+  },
+  {
     "name": "commitLViewConsumerIfHasProducers"
   },
   {
@@ -463,6 +454,18 @@
   },
   {
     "name": "connectableObservableDescriptor"
+  },
+  {
+    "name": "consumerAfterComputation"
+  },
+  {
+    "name": "consumerBeforeComputation"
+  },
+  {
+    "name": "consumerDestroy"
+  },
+  {
+    "name": "consumerIsLive"
   },
   {
     "name": "convertToBitFlags"
@@ -481,6 +484,9 @@
   },
   {
     "name": "createLView"
+  },
+  {
+    "name": "createLViewConsumer"
   },
   {
     "name": "createNodeInjector"
@@ -681,9 +687,6 @@
     "name": "importProvidersFrom"
   },
   {
-    "name": "inNotificationPhase"
-  },
-  {
     "name": "includeViewProviders"
   },
   {
@@ -853,6 +856,9 @@
   },
   {
     "name": "processInjectorTypesWithProviders"
+  },
+  {
+    "name": "producerRemoveLiveConsumerAtIndex"
   },
   {
     "name": "profiler"

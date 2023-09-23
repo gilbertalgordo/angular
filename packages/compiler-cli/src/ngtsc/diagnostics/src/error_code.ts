@@ -113,6 +113,8 @@ export enum ErrorCode {
    */
   CONFLICTING_INPUT_TRANSFORM = 2020,
 
+  /** Raised when a component has both `styleUrls` and `styleUrl`. */
+  COMPONENT_INVALID_STYLE_URLS = 2021,
 
   SYMBOL_NOT_EXPORTED = 3001,
   /**
@@ -199,10 +201,9 @@ export enum ErrorCode {
   WARN_NGMODULE_ID_UNNECESSARY = 6100,
 
   /**
-   * Not actually raised by the compiler, but reserved for documentation of a View Engine error when
-   * a View Engine build depends on an Ivy-compiled NgModule.
+   * 6999 was previously assigned to NGMODULE_VE_DEPENDENCY_ON_IVY_LIB
+   * To prevent any confusion, let's not reassign it.
    */
-  NGMODULE_VE_DEPENDENCY_ON_IVY_LIB = 6999,
 
   /**
    * An element name failed validation against the DOM schema.
@@ -258,6 +259,18 @@ export enum ErrorCode {
    * A directive usage isn't binding to one or more required inputs.
    */
   MISSING_REQUIRED_INPUTS = 8008,
+
+  /**
+   * The tracking expression of a `for` loop block is accessing a variable that is unavailable,
+   * for example:
+   *
+   * ```
+   * <ng-template let-ref>
+   *   {#for item of items; track ref}{/for}
+   * </ng-template>
+   * ```
+   */
+  ILLEGAL_FOR_LOOP_TRACK_ACCESS = 8009,
 
   /**
    * A two way binding in a template has an incorrect syntax,
@@ -383,4 +396,16 @@ export enum ErrorCode {
    * type inference.
    */
   SUGGEST_SUBOPTIMAL_TYPE_INFERENCE = 10002,
+
+  /**
+   * A string is imported from another file to be used as template string for a component in local
+   * compilation mode.
+   */
+  LOCAL_COMPILATION_IMPORTED_TEMPLATE_STRING = 11001,
+
+  /**
+   * A string is imported from another file to be used as styles string for a component in local
+   * compilation mode.
+   */
+  LOCAL_COMPILATION_IMPORTED_STYLES_STRING = 11002,
 }

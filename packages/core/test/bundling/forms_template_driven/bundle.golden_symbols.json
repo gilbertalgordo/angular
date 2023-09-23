@@ -27,6 +27,9 @@
     "name": "AbstractValidatorDirective"
   },
   {
+    "name": "AfterRenderEventManager"
+  },
+  {
     "name": "AnonymousSubject"
   },
   {
@@ -181,9 +184,6 @@
   },
   {
     "name": "EVENT_MANAGER_PLUGINS"
-  },
-  {
-    "name": "EffectManager"
   },
   {
     "name": "ElementRef"
@@ -342,9 +342,6 @@
     "name": "NG_VALUE_ACCESSOR"
   },
   {
-    "name": "NOOP_CLEANUP_FN"
-  },
-  {
     "name": "NOT_FOUND"
   },
   {
@@ -450,6 +447,9 @@
     "name": "R3ViewContainerRef"
   },
   {
+    "name": "REACTIVE_LVIEW_CONSUMER_NODE"
+  },
+  {
     "name": "REMOVE_STYLES_ON_COMPONENT_DESTROY"
   },
   {
@@ -457,12 +457,6 @@
   },
   {
     "name": "RadioControlRegistryModule"
-  },
-  {
-    "name": "ReactiveLViewConsumer"
-  },
-  {
-    "name": "ReactiveNode"
   },
   {
     "name": "RefCountOperator"
@@ -600,12 +594,6 @@
     "name": "ViewRef"
   },
   {
-    "name": "Watch"
-  },
-  {
-    "name": "WeakRefImpl"
-  },
-  {
     "name": "ZONE_IS_STABLE_OBSERVABLE"
   },
   {
@@ -657,9 +645,6 @@
     "name": "_locateOrCreateTextNode"
   },
   {
-    "name": "_nextReactiveId"
-  },
-  {
     "name": "_platformInjector"
   },
   {
@@ -679,6 +664,9 @@
   },
   {
     "name": "activeConsumer"
+  },
+  {
+    "name": "addLViewToLContainer"
   },
   {
     "name": "addPropertyAlias"
@@ -715,6 +703,9 @@
   },
   {
     "name": "applyViewChange"
+  },
+  {
+    "name": "assertConsumerNode"
   },
   {
     "name": "attachInjectFlag"
@@ -759,6 +750,9 @@
     "name": "collectNativeNodes"
   },
   {
+    "name": "collectNativeNodesInLContainer"
+  },
+  {
     "name": "collectStylingFromDirectives"
   },
   {
@@ -789,6 +783,18 @@
     "name": "connectableObservableDescriptor"
   },
   {
+    "name": "consumerAfterComputation"
+  },
+  {
+    "name": "consumerBeforeComputation"
+  },
+  {
+    "name": "consumerDestroy"
+  },
+  {
+    "name": "consumerIsLive"
+  },
+  {
     "name": "controlPath"
   },
   {
@@ -817,6 +823,9 @@
   },
   {
     "name": "createLView"
+  },
+  {
+    "name": "createLViewConsumer"
   },
   {
     "name": "createNodeInjector"
@@ -865,6 +874,9 @@
   },
   {
     "name": "diPublicInInjector"
+  },
+  {
+    "name": "disableStylesheet"
   },
   {
     "name": "empty"
@@ -1107,6 +1119,9 @@
     "name": "handleError"
   },
   {
+    "name": "hasInSkipHydrationBlockFlag"
+  },
+  {
     "name": "hasParentInjector"
   },
   {
@@ -1126,9 +1141,6 @@
   },
   {
     "name": "importProvidersFrom"
-  },
-  {
-    "name": "inNotificationPhase"
   },
   {
     "name": "includeViewProviders"
@@ -1419,6 +1431,9 @@
     "name": "noSideEffects"
   },
   {
+    "name": "nonNegativeNumber"
+  },
+  {
     "name": "nonNull"
   },
   {
@@ -1459,6 +1474,9 @@
   },
   {
     "name": "processInjectorTypesWithProviders"
+  },
+  {
+    "name": "producerRemoveLiveConsumerAtIndex"
   },
   {
     "name": "profiler"
@@ -1620,6 +1638,9 @@
     "name": "shimStylesContent"
   },
   {
+    "name": "shouldAddViewToDom"
+  },
+  {
     "name": "shouldSearchParent"
   },
   {
@@ -1750,6 +1771,9 @@
   },
   {
     "name": "ɵɵproperty"
+  },
+  {
+    "name": "ɵɵtemplate"
   },
   {
     "name": "ɵɵtext"

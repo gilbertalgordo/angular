@@ -6,11 +6,8 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {assertInInjectionContext, computed, DestroyRef, inject, Injector, signal, Signal, WritableSignal} from '@angular/core';
+import {assertInInjectionContext, computed, DestroyRef, inject, Injector, signal, Signal, untracked, WritableSignal, ɵRuntimeError, ɵRuntimeErrorCode} from '@angular/core';
 import {Observable, Subscribable} from 'rxjs';
-
-import {RuntimeError, RuntimeErrorCode} from '../../src/errors';
-import {untracked} from '../../src/signals';
 
 /**
  * Options for `toSignal`.
@@ -178,21 +175,23 @@ export function toSignal<T, U = undefined>(
     state = signal<State<T|U>>({kind: StateKind.Value, value: options?.initialValue as U});
   }
 
-  const sub = source.subscribe({
-    next: value => state.set({kind: StateKind.Value, value}),
-    error: error => state.set({kind: StateKind.Error, error}),
-    // Completion of the Observable is meaningless to the signal. Signals don't have a concept of
-    // "complete".
+  untracked(() => {
+    const sub = source.subscribe({
+      next: value => state.set({kind: StateKind.Value, value}),
+      error: error => state.set({kind: StateKind.Error, error}),
+      // Completion of the Observable is meaningless to the signal. Signals don't have a concept of
+      // "complete".
+    });
+
+    if (ngDevMode && options?.requireSync && state().kind === StateKind.NoValue) {
+      throw new ɵRuntimeError(
+          ɵRuntimeErrorCode.REQUIRE_SYNC_WITHOUT_SYNC_EMIT,
+          '`toSignal()` called with `requireSync` but `Observable` did not emit synchronously.');
+    }
+
+    // Unsubscribe when the current context is destroyed, if requested.
+    cleanupRef?.onDestroy(sub.unsubscribe.bind(sub));
   });
-
-  if (ngDevMode && options?.requireSync && untracked(state).kind === StateKind.NoValue) {
-    throw new RuntimeError(
-        RuntimeErrorCode.REQUIRE_SYNC_WITHOUT_SYNC_EMIT,
-        '`toSignal()` called with `requireSync` but `Observable` did not emit synchronously.');
-  }
-
-  // Unsubscribe when the current context is destroyed, if requested.
-  cleanupRef?.onDestroy(sub.unsubscribe.bind(sub));
 
   // The actual returned signal is a `computed` of the `State` signal, which maps the various states
   // to either values or errors.
@@ -206,8 +205,8 @@ export function toSignal<T, U = undefined>(
       case StateKind.NoValue:
         // This shouldn't really happen because the error is thrown on creation.
         // TODO(alxhub): use a RuntimeError when we finalize the error semantics
-        throw new RuntimeError(
-            RuntimeErrorCode.REQUIRE_SYNC_WITHOUT_SYNC_EMIT,
+        throw new ɵRuntimeError(
+            ɵRuntimeErrorCode.REQUIRE_SYNC_WITHOUT_SYNC_EMIT,
             '`toSignal()` called with `requireSync` but `Observable` did not emit synchronously.');
     }
   });

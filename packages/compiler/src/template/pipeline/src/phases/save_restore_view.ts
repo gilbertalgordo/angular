@@ -8,13 +8,13 @@
 
 import * as o from '../../../../output/output_ast';
 import * as ir from '../../ir';
-import type {ComponentCompilation, ViewCompilation} from '../compilation';
+import type {ComponentCompilationJob, ViewCompilationUnit} from '../compilation';
 
-export function phaseSaveRestoreView(cpl: ComponentCompilation): void {
-  for (const view of cpl.views.values()) {
+export function phaseSaveRestoreView(job: ComponentCompilationJob): void {
+  for (const view of job.views.values()) {
     view.create.prepend([
       ir.createVariableOp<ir.CreateOp>(
-          view.tpl.allocateXrefId(), {
+          view.job.allocateXrefId(), {
             kind: ir.SemanticVariableKind.SavedView,
             name: null,
             view: view.xref,
@@ -28,7 +28,7 @@ export function phaseSaveRestoreView(cpl: ComponentCompilation): void {
       }
 
       // Embedded views always need the save/restore view operation.
-      let needsRestoreView = view !== cpl.root;
+      let needsRestoreView = view !== job.root;
 
       if (!needsRestoreView) {
         for (const handlerOp of op.handlerOps) {
@@ -48,15 +48,15 @@ export function phaseSaveRestoreView(cpl: ComponentCompilation): void {
   }
 }
 
-function addSaveRestoreViewOperationToListener(view: ViewCompilation, op: ir.ListenerOp) {
+function addSaveRestoreViewOperationToListener(unit: ViewCompilationUnit, op: ir.ListenerOp) {
   op.handlerOps.prepend([
     ir.createVariableOp<ir.UpdateOp>(
-        view.tpl.allocateXrefId(), {
+        unit.job.allocateXrefId(), {
           kind: ir.SemanticVariableKind.Context,
           name: null,
-          view: view.xref,
+          view: unit.xref,
         },
-        new ir.RestoreViewExpr(view.xref)),
+        new ir.RestoreViewExpr(unit.xref)),
   ]);
 
   // The "restore view" operation in listeners requires a call to `resetView` to reset the

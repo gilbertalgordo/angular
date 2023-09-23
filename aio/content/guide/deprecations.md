@@ -124,6 +124,14 @@ v16 - v19
 | `@angular/platform-browser`         | [`BrowserModule.withServerTransition`](api/platform-browser/BrowserModule#withservertransition)            | v16           | v18         |
 | `@angular/platform-browser`         | [`makeStateKey`, `StateKey` and `TransferState`](#platform-browser), symbols were moved to `@angular/core`                                        | v16           | v18         |
 
+
+### Deprecated features that can be removed in v19 or later
+
+| Area                                | API or Feature                                                                                             | Deprecated in | May be removed in |
+|:---                                 |:---                                                                                                        |:---           |:---               |
+| `@angular/animations` | `AnimationDriver.NOOP` | v17 | v19 |
+| `@angular/core` | `PACKAGE_ROOT_URL` | v17 | v19 |
+
 ### Deprecated features with no planned removal version
 
 | Area                                | API or Feature                                                                                             | Deprecated in | May be removed in |
@@ -142,6 +150,14 @@ This section contains a complete list all deprecated APIs, with details to help 
 In the [API reference section](api) of this site, deprecated APIs are indicated by ~~strikethrough.~~ You can filter the API list by [Status: deprecated](api?status=deprecated).
 
 </div>
+
+<a id="animations"></a>
+
+### &commat;angular/animations
+
+| API                                                                                           | Replacement                                         | Deprecation announced | Details |
+|:---                                                                                           |:---                                                 |:---                   |:---     |
+| [AnimationDriver.NOOP](api/animations/browser/AnimationDriver#NOOP) | `NoopAnimationDriver` | v17 | Create a new  `NoopAnimationDriver` directly instead of calling `AnimationDriver.NOOP`
 
 <a id="common"></a>
 
@@ -199,7 +215,6 @@ In the [API reference section](api) of this site, deprecated APIs are indicated 
 |:---                                        |:---                               |:---                   |:---     |
 | [`RouterLinkWithHref` directive](api/router/RouterLinkWithHref) | Use `RouterLink` instead. | v15                   | The `RouterLinkWithHref` directive code was merged into `RouterLink`. Now the `RouterLink` directive can be used for all elements that have `routerLink` attribute. |
 | [`provideRoutes` function](api/router/provideRoutes) | Use `ROUTES` `InjectionToken` instead. | v15                   | The `provideRoutes` helper function is minimally useful and can be unintentionally used instead of `provideRouter` due to similar spelling. |
-| [`setupTestingRouter` function](api/router/testing/setupTestingRouter) | Use `provideRouter` or `RouterModule` instead. | v15.1                   | The `setupTestingRouter` function is not necessary. The `Router` is initialized based on the DI configuration in tests as it would be in production. |
 | [class and `InjectionToken` guards and resolvers](api/router/DeprecatedGuard) | Use plain JavaScript functions instead. | v15.2                   | Functional guards are simpler and more powerful than class and token-based guards. |
 
 
@@ -422,19 +437,13 @@ The following strategies are meant to be configured by registering the
 application strategy in DI via the `providers` in the root `NgModule` or
 `bootstrapApplication`:
 * `routeReuseStrategy`
-* `titleStrategy`
-* `urlHandlingStrategy`
 
 The following options are meant to be configured using the options
 available in `RouterModule.forRoot` or `provideRouter` and `withRouterConfig`.
 * `onSameUrlNavigation`
-* `paramsInheritanceStrategy`
-* `urlUpdateStrategy`
-* `canceledNavigationResolution`
 * `errorHandler`
 
 The following options are deprecated in entirely:
-* `malformedUriErrorHandler` - URI parsing errors should be handled in the `UrlSerializer` instead.
 * `errorHandler` - Subscribe to the `Router` events and filter for `NavigationError` instead.
 
 <a id="router-can-load"></a>
@@ -446,40 +455,6 @@ in the lifecycle of a navigation. A `CanMatch` guard which returns false will pr
 matched at all and also prevent loading the children of the `Route`. `CanMatch` guards can accomplish the same
 goals as `CanLoad` but with the addition of allowing the navigation to match other routes when they reject
 (such as a wildcard route). There is no need to have both types of guards in the API surface.
-
-<a id="loadChildren"></a>
-
-### `loadChildren` string syntax
-
-When Angular first introduced lazy routes, there wasn't browser support for dynamically loading additional JavaScript.
-Angular created its own scheme using the syntax `loadChildren: './lazy/lazy.module#LazyModule'` and built tooling to support it.
-Now that ECMAScript dynamic import is supported in many browsers, Angular is moving toward this new syntax.
-
-In version 8, the string syntax for the [`loadChildren`](api/router/LoadChildren) route specification was deprecated, in favor of new syntax that uses `import()` syntax.
-
-**Before**:
-
-<code-example path="deprecation-guide/src/app/app.module.ts" language="typescript" region="lazyload-deprecated-syntax"></code-example>
-
-**After**:
-
-<code-example path="deprecation-guide/src/app/app.module.ts" language="typescript" region="lazyload-syntax"></code-example>
-
-<div class="alert is-helpful">
-
-**Version 8 update**: When you update to version 8, the [`ng update`](cli/update) command performs the transformation automatically.
-Prior to version 7, the `import()` syntax only works in JIT mode \(with view engine\).
-
-</div>
-
-<div class="alert is-helpful">
-
-**Declaration syntax**: <br />
-It's important to follow the route declaration syntax `loadChildren: () => import('...').then(m => m.ModuleName)` to allow `ngc` to discover the lazy-loaded module and the associated `NgModule`.
-You can find the complete list of allowed syntax constructs [here](https://github.com/angular/angular-cli/blob/a491b09800b493fe01301387fa9a025f7c7d4808/packages/ngtools/webpack/src/transformers/import_factory.ts#L104-L113).
-These restrictions will be relaxed with the release of Ivy since it'll no longer use `NgFactories`.
-
-</div>
 
 <a id="reflect-metadata"></a>
 

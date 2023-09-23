@@ -64,12 +64,7 @@ load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
 
 nodejs_register_toolchains(
     name = "nodejs",
-    node_version = "16.14.0",
-)
-
-nodejs_register_toolchains(
-    name = "node18",
-    node_version = "18.10.0",
+    node_version = "18.13.0",
 )
 
 # Download npm dependencies.
@@ -83,8 +78,9 @@ yarn_install(
     data = [
         YARN_LABEL,
         "//:.yarnrc",
+        "//:tools/npm-patches/@bazel+jasmine+5.8.1.patch",
         "//tools:postinstall-patches.js",
-        "//tools/esm-interop:patches/npm/@angular+build-tooling+0.0.0-8d4803573edc70b90a1134ffa996303d1dcc18a9.patch",
+        "//tools/esm-interop:patches/npm/@angular+build-tooling+0.0.0-0109d498b0f6aae418ed4924a5e5c65695f0ac61.patch",
         "//tools/esm-interop:patches/npm/@bazel+concatjs+5.8.1.patch",
         "//tools/esm-interop:patches/npm/@bazel+esbuild+5.7.1.patch",
         "//tools/esm-interop:patches/npm/@bazel+protractor+5.7.1.patch",
@@ -110,6 +106,7 @@ yarn_install(
     data = [
         YARN_LABEL,
         "//:.yarnrc",
+        "//:tools/npm-patches/@bazel+jasmine+5.8.1.patch",
         "//aio:tools/cli-patches/bazel-architect-output.patch",
         "//aio:tools/cli-patches/patch.js",
     ],
@@ -199,10 +196,10 @@ cldr_xml_data_repository(
 # sass rules
 http_archive(
     name = "io_bazel_rules_sass",
-    sha256 = "4d57de5fea450f60a0e01b63245fabea5a6d355248720d3a0b60a466dc47d32c",
-    strip_prefix = "rules_sass-e2e30dfb01a6aae20f6d6910f616a4d8300434aa",
+    sha256 = "81758d485da797baca81fb07e2b14a818e33c539beaddeb373054b5c39807010",
+    strip_prefix = "rules_sass-63d77ffdf3039aae1f0bb54e05ff47b7c50f1553",
     urls = [
-        "https://github.com/bazelbuild/rules_sass/archive/e2e30dfb01a6aae20f6d6910f616a4d8300434aa.zip",
+        "https://github.com/bazelbuild/rules_sass/archive/63d77ffdf3039aae1f0bb54e05ff47b7c50f1553.zip",
     ],
 )
 
