@@ -11,10 +11,9 @@ import ts from 'typescript';
 
 import {ImportRewriter, ReferenceEmitter} from '../../imports';
 import {ClassDeclaration, ReflectionHost} from '../../reflection';
-import {ImportManager, translateType} from '../../translator';
+import {ImportManager, presetImportManagerForceNamespaceImports, translateType} from '../../translator';
 
 import {DtsTransform} from './api';
-import {addImports} from './utils';
 
 /**
  * Keeps track of `DtsTransform`s per source file, so that it is known which source files need to
@@ -55,11 +54,10 @@ export class DtsTransformRegistry {
 
 export function declarationTransformFactory(
     transformRegistry: DtsTransformRegistry, reflector: ReflectionHost,
-    refEmitter: ReferenceEmitter, importRewriter: ImportRewriter,
-    importPrefix?: string): ts.TransformerFactory<ts.SourceFile> {
+    refEmitter: ReferenceEmitter,
+    importRewriter: ImportRewriter): ts.TransformerFactory<ts.SourceFile> {
   return (context: ts.TransformationContext) => {
-    const transformer =
-        new DtsTransformer(context, reflector, refEmitter, importRewriter, importPrefix);
+    const transformer = new DtsTransformer(context, reflector, refEmitter, importRewriter);
     return (fileOrBundle) => {
       if (ts.isBundle(fileOrBundle)) {
         // Only attempt to transform source files.
@@ -80,14 +78,14 @@ export function declarationTransformFactory(
 class DtsTransformer {
   constructor(
       private ctx: ts.TransformationContext, private reflector: ReflectionHost,
-      private refEmitter: ReferenceEmitter, private importRewriter: ImportRewriter,
-      private importPrefix?: string) {}
+      private refEmitter: ReferenceEmitter, private importRewriter: ImportRewriter) {}
 
   /**
    * Transform the declaration file and add any declarations which were recorded.
    */
   transform(sf: ts.SourceFile, transforms: DtsTransform[]): ts.SourceFile {
-    const imports = new ImportManager(this.importRewriter, this.importPrefix);
+    const imports = new ImportManager(
+        {...presetImportManagerForceNamespaceImports, rewriter: this.importRewriter});
 
     const visitor: ts.Visitor = (node: ts.Node): ts.VisitResult<ts.Node> => {
       if (ts.isClassDeclaration(node)) {
@@ -103,8 +101,8 @@ class DtsTransformer {
     // Recursively scan through the AST and process all nodes as desired.
     sf = ts.visitNode(sf, visitor, ts.isSourceFile) || sf;
 
-    // Add new imports for this file.
-    return addImports(imports, sf);
+    // Update/insert needed imports.
+    return imports.transformTsFile(this.ctx, sf);
   }
 
   private transformClassDeclaration(

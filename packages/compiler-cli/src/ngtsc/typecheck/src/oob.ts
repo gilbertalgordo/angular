@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {BindingPipe, PropertyRead, PropertyWrite, TmplAstBoundAttribute, TmplAstBoundEvent, TmplAstElement, TmplAstForLoopBlock, TmplAstReference, TmplAstTemplate, TmplAstVariable} from '@angular/compiler';
+import {AbsoluteSourceSpan, BindingPipe, PropertyRead, TmplAstBoundAttribute, TmplAstBoundEvent, TmplAstElement, TmplAstForLoopBlock, TmplAstForLoopBlockEmpty, TmplAstHoverDeferredTrigger, TmplAstIfBlockBranch, TmplAstInteractionDeferredTrigger, TmplAstReference, TmplAstSwitchBlockCase, TmplAstTemplate, TmplAstVariable, TmplAstViewportDeferredTrigger} from '@angular/compiler';
 import ts from 'typescript';
 
 import {ErrorCode, makeDiagnostic, makeRelatedInformation, ngErrorCode} from '../../diagnostics';
@@ -50,8 +50,25 @@ export interface OutOfBandDiagnosticRecorder {
    */
   missingPipe(templateId: TemplateId, ast: BindingPipe): void;
 
-  illegalAssignmentToTemplateVar(
-      templateId: TemplateId, assignment: PropertyWrite, target: TmplAstVariable): void;
+  /**
+   * Reports usage of a pipe imported via `@Component.deferredImports` outside
+   * of a `@defer` block in a template.
+   *
+   * @param templateId the template type-checking ID of the template which contains the unknown
+   * pipe.
+   * @param ast the `BindingPipe` invocation of the pipe which could not be found.
+   */
+  deferredPipeUsedEagerly(templateId: TemplateId, ast: BindingPipe): void;
+
+  /**
+   * Reports usage of a component/directive imported via `@Component.deferredImports` outside
+   * of a `@defer` block in a template.
+   *
+   * @param templateId the template type-checking ID of the template which contains the unknown
+   * pipe.
+   * @param element the element which hosts a component that was defer-loaded.
+   */
+  deferredComponentUsedEagerly(templateId: TemplateId, element: TmplAstElement): void;
 
   /**
    * Reports a duplicate declaration of a template variable.
@@ -87,12 +104,29 @@ export interface OutOfBandDiagnosticRecorder {
       templateId: TemplateId, element: TmplAstElement|TmplAstTemplate, directiveName: string,
       isComponent: boolean, inputAliases: string[]): void;
 
-
   /**
    * Reports accesses of properties that aren't available in a `for` block's tracking expression.
    */
   illegalForLoopTrackAccess(
       templateId: TemplateId, block: TmplAstForLoopBlock, access: PropertyRead): void;
+
+  /**
+   * Reports deferred triggers that cannot access the element they're referring to.
+   */
+  inaccessibleDeferredTriggerElement(
+      templateId: TemplateId,
+      trigger: TmplAstHoverDeferredTrigger|TmplAstInteractionDeferredTrigger|
+      TmplAstViewportDeferredTrigger): void;
+
+  /**
+   * Reports cases where control flow nodes prevent content projection.
+   */
+  controlFlowPreventingContentProjection(
+      templateId: TemplateId, category: ts.DiagnosticCategory,
+      projectionNode: TmplAstElement|TmplAstTemplate, componentName: string, slotSelector: string,
+      controlFlowNode: TmplAstIfBlockBranch|TmplAstSwitchBlockCase|TmplAstForLoopBlock|
+      TmplAstForLoopBlockEmpty,
+      preservesWhitespaces: boolean): void;
 }
 
 export class OutOfBandDiagnosticRecorderImpl implements OutOfBandDiagnosticRecorder {
@@ -139,25 +173,46 @@ export class OutOfBandDiagnosticRecorderImpl implements OutOfBandDiagnosticRecor
     this.recordedPipes.add(ast);
   }
 
-  illegalAssignmentToTemplateVar(
-      templateId: TemplateId, assignment: PropertyWrite, target: TmplAstVariable): void {
-    const mapping = this.resolver.getSourceMapping(templateId);
-    const errorMsg = `Cannot use variable '${
-        assignment
-            .name}' as the left-hand side of an assignment expression. Template variables are read-only.`;
+  deferredPipeUsedEagerly(templateId: TemplateId, ast: BindingPipe): void {
+    if (this.recordedPipes.has(ast)) {
+      return;
+    }
 
-    const sourceSpan = this.resolver.toParseSourceSpan(templateId, assignment.sourceSpan);
+    const mapping = this.resolver.getSourceMapping(templateId);
+    const errorMsg = `Pipe '${ast.name}' was imported  via \`@Component.deferredImports\`, ` +
+        `but was used outside of a \`@defer\` block in a template. To fix this, either ` +
+        `use the '${ast.name}' pipe inside of a \`@defer\` block or import this dependency ` +
+        `using the \`@Component.imports\` field.`;
+
+    const sourceSpan = this.resolver.toParseSourceSpan(templateId, ast.nameSpan);
     if (sourceSpan === null) {
-      throw new Error(`Assertion failure: no SourceLocation found for property binding.`);
+      throw new Error(
+          `Assertion failure: no SourceLocation found for usage of pipe '${ast.name}'.`);
     }
     this._diagnostics.push(makeTemplateDiagnostic(
         templateId, mapping, sourceSpan, ts.DiagnosticCategory.Error,
-        ngErrorCode(ErrorCode.WRITE_TO_READ_ONLY_VARIABLE), errorMsg, [{
-          text: `The variable ${assignment.name} is declared here.`,
-          start: target.valueSpan?.start.offset || target.sourceSpan.start.offset,
-          end: target.valueSpan?.end.offset || target.sourceSpan.end.offset,
-          sourceFile: mapping.node.getSourceFile(),
-        }]));
+        ngErrorCode(ErrorCode.DEFERRED_PIPE_USED_EAGERLY), errorMsg));
+    this.recordedPipes.add(ast);
+  }
+
+  deferredComponentUsedEagerly(templateId: TemplateId, element: TmplAstElement): void {
+    const mapping = this.resolver.getSourceMapping(templateId);
+    const errorMsg = `Element '${element.name}' contains a component or a directive that ` +
+        `was imported  via \`@Component.deferredImports\`, but the element itself is located ` +
+        `outside of a \`@defer\` block in a template. To fix this, either ` +
+        `use the '${element.name}' element inside of a \`@defer\` block or ` +
+        `import referenced component/directive dependency using the \`@Component.imports\` field.`;
+
+    const {start, end} = element.startSourceSpan;
+    const absoluteSourceSpan = new AbsoluteSourceSpan(start.offset, end.offset);
+    const sourceSpan = this.resolver.toParseSourceSpan(templateId, absoluteSourceSpan);
+    if (sourceSpan === null) {
+      throw new Error(
+          `Assertion failure: no SourceLocation found for usage of pipe '${element.name}'.`);
+    }
+    this._diagnostics.push(makeTemplateDiagnostic(
+        templateId, mapping, sourceSpan, ts.DiagnosticCategory.Error,
+        ngErrorCode(ErrorCode.DEFERRED_DIRECTIVE_USED_EAGERLY), errorMsg));
   }
 
   duplicateTemplateVar(
@@ -299,16 +354,76 @@ export class OutOfBandDiagnosticRecorderImpl implements OutOfBandDiagnosticRecor
       throw new Error(`Assertion failure: no SourceLocation found for property read.`);
     }
 
+    const messageVars = [block.item, ...block.contextVariables.filter(v => v.value === '$index')]
+                            .map(v => `'${v.name}'`)
+                            .join(', ');
     const message =
         `Cannot access '${access.name}' inside of a track expression. ` +
-        `Only '${block.item.name}', '${
-            block.contextVariables.$index
-                .name}' and properties on the containing component are available to this expression.`;
+        `Only ${
+            messageVars} and properties on the containing component are available to this expression.`;
 
     this._diagnostics.push(makeTemplateDiagnostic(
         templateId, this.resolver.getSourceMapping(templateId), sourceSpan,
         ts.DiagnosticCategory.Error, ngErrorCode(ErrorCode.ILLEGAL_FOR_LOOP_TRACK_ACCESS),
         message));
+  }
+
+  inaccessibleDeferredTriggerElement(
+      templateId: TemplateId,
+      trigger: TmplAstHoverDeferredTrigger|TmplAstInteractionDeferredTrigger|
+      TmplAstViewportDeferredTrigger): void {
+    let message: string;
+
+    if (trigger.reference === null) {
+      message = `Trigger cannot find reference. Make sure that the @defer block has a ` +
+          `@placeholder with at least one root element node.`;
+    } else {
+      message =
+          `Trigger cannot find reference "${trigger.reference}".\nCheck that an element with #${
+              trigger.reference} exists in the same template and it's accessible from the ` +
+          `@defer block.\nDeferred blocks can only access triggers in same view, a parent ` +
+          `embedded view or the root view of the @placeholder block.`;
+    }
+
+    this._diagnostics.push(makeTemplateDiagnostic(
+        templateId, this.resolver.getSourceMapping(templateId), trigger.sourceSpan,
+        ts.DiagnosticCategory.Error, ngErrorCode(ErrorCode.INACCESSIBLE_DEFERRED_TRIGGER_ELEMENT),
+        message));
+  }
+
+  controlFlowPreventingContentProjection(
+      templateId: TemplateId, category: ts.DiagnosticCategory,
+      projectionNode: TmplAstElement|TmplAstTemplate, componentName: string, slotSelector: string,
+      controlFlowNode: TmplAstIfBlockBranch|TmplAstSwitchBlockCase|TmplAstForLoopBlock|
+      TmplAstForLoopBlockEmpty,
+      preservesWhitespaces: boolean): void {
+    const blockName = controlFlowNode.nameSpan.toString().trim();
+    const lines = [
+      `Node matches the "${slotSelector}" slot of the "${
+          componentName}" component, but will not be projected into the specific slot because the surrounding ${
+          blockName} has more than one node at its root. To project the node in the right slot, you can:\n`,
+      `1. Wrap the content of the ${blockName} block in an <ng-container/> that matches the "${
+          slotSelector}" selector.`,
+      `2. Split the content of the ${blockName} block across multiple ${
+          blockName} blocks such that each one only has a single projectable node at its root.`,
+      `3. Remove all content from the ${blockName} block, except for the node being projected.`
+    ];
+
+    if (preservesWhitespaces) {
+      lines.push(
+          'Note: the host component has `preserveWhitespaces: true` which may ' +
+          'cause whitespace to affect content projection.');
+    }
+
+    lines.push(
+        '',
+        'This check can be disabled using the `extendedDiagnostics.checks.' +
+            'controlFlowPreventingContentProjection = "suppress" compiler option.`');
+
+    this._diagnostics.push(makeTemplateDiagnostic(
+        templateId, this.resolver.getSourceMapping(templateId), projectionNode.startSourceSpan,
+        category, ngErrorCode(ErrorCode.CONTROL_FLOW_PREVENTING_CONTENT_PROJECTION),
+        lines.join('\n')));
   }
 }
 

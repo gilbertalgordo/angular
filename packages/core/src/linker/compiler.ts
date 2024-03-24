@@ -114,22 +114,11 @@ export class Compiler {
 /**
  * Options for creating a compiler.
  *
- * Note: the `useJit` and `missingTranslation` config options are not used in Ivy, passing them has
- * no effect. Those config options are deprecated since v13.
- *
  * @publicApi
  */
 export type CompilerOptions = {
-  /**
-   * @deprecated not used at all in Ivy, providing this config option has no effect.
-   */
-  useJit?: boolean,
   defaultEncapsulation?: ViewEncapsulation,
   providers?: StaticProvider[],
-  /**
-   * @deprecated not used at all in Ivy, providing this config option has no effect.
-   */
-  missingTranslation?: MissingTranslationStrategy,
   preserveWhitespaces?: boolean,
 };
 
@@ -138,7 +127,8 @@ export type CompilerOptions = {
  *
  * @publicApi
  */
-export const COMPILER_OPTIONS = new InjectionToken<CompilerOptions[]>('compilerOptions');
+export const COMPILER_OPTIONS =
+    new InjectionToken<CompilerOptions[]>(ngDevMode ? 'compilerOptions' : '');
 
 /**
  * A factory for creating a Compiler

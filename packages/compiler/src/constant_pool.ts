@@ -92,6 +92,14 @@ export class ConstantPool {
   private literalFactories = new Map<string, o.Expression>();
   private sharedConstants = new Map<string, o.Expression>();
 
+  /**
+   * Constant pool also tracks claimed names from {@link uniqueName}.
+   * This is useful to avoid collisions if variables are intended to be
+   * named a certain way- but may conflict. We wouldn't want to always suffix
+   * them with unique numbers.
+   */
+  private _claimedNames = new Map<string, number>();
+
   private nextNameIndex = 0;
 
   constructor(private readonly isClosureCompilerEnabled: boolean = false) {}
@@ -188,7 +196,10 @@ export class ConstantPool {
     }
   }
 
-  getSharedFunctionReference(fn: o.FunctionExpr|o.ArrowFunctionExpr, prefix: string): o.Expression {
+  // TODO: useUniqueName(false) is necessary for naming compatibility with
+  // TemplateDefinitionBuilder, but should be removed once Template Pipeline is the default.
+  getSharedFunctionReference(fn: o.Expression, prefix: string, useUniqueName: boolean = true):
+      o.Expression {
     const isArrow = fn instanceof o.ArrowFunctionExpr;
 
     for (const current of this.statements) {
@@ -200,14 +211,18 @@ export class ConstantPool {
 
       // Function declarations are saved as function statements
       // so we compare them directly to the passed-in function.
-      if (!isArrow && current instanceof o.DeclareFunctionStmt && fn.isEquivalent(current)) {
+      if (!isArrow && current instanceof o.DeclareFunctionStmt && fn instanceof o.FunctionExpr &&
+          fn.isEquivalent(current)) {
         return o.variable(current.name);
       }
     }
 
     // Otherwise declare the function.
-    const name = this.uniqueName(prefix);
-    this.statements.push(fn.toDeclStmt(name, o.StmtModifier.Final));
+    const name = useUniqueName ? this.uniqueName(prefix) : prefix;
+    this.statements.push(
+        fn instanceof o.FunctionExpr ?
+            fn.toDeclStmt(name, o.StmtModifier.Final) :
+            new o.DeclareVarStmt(name, fn, o.INFERRED_TYPE, o.StmtModifier.Final, fn.sourceSpan));
     return o.variable(name);
   }
 
@@ -234,14 +249,18 @@ export class ConstantPool {
   }
 
   /**
-   * Produce a unique name.
+   * Produce a unique name in the context of this pool.
    *
    * The name might be unique among different prefixes if any of the prefixes end in
    * a digit so the prefix should be a constant string (not based on user input) and
    * must not end in a digit.
    */
-  uniqueName(prefix: string): string {
-    return `${prefix}${this.nextNameIndex++}`;
+  uniqueName(name: string, alwaysIncludeSuffix = true): string {
+    const count = this._claimedNames.get(name) ?? 0;
+    const result = count === 0 && !alwaysIncludeSuffix ? `${name}` : `${name}${count}`;
+
+    this._claimedNames.set(name, count + 1);
+    return result;
   }
 
   private freshName(): string {

@@ -3,6 +3,7 @@
   "command": "ng serve [project]",
   "shortDescription": "Builds and serves your application, rebuilding on file changes.",
   "aliases": [
+    "dev",
     "s"
   ],
   "deprecated": false,
@@ -10,12 +11,18 @@
     {
       "name": "allowed-hosts",
       "type": "array",
-      "description": "List of hosts that are allowed to access the dev server."
+      "description": "List of hosts that are allowed to access the dev server. This option has no effect when using the 'application' or other esbuild-based builders."
     },
     {
       "name": "browser-target",
       "type": "string",
+      "deprecated": "Use 'buildTarget' instead.",
       "description": "A browser builder target to serve in the format of `project:target[:configuration]`. You can also pass in more than one configuration name as a comma-separated list. Example: `project:target:production,staging`."
+    },
+    {
+      "name": "build-target",
+      "type": "string",
+      "description": "A build builder target to serve in the format of `project:target[:configuration]`. You can also pass in more than one configuration name as a comma-separated list. Example: `project:target:production,staging`."
     },
     {
       "name": "configuration",
@@ -29,7 +36,7 @@
       "name": "disable-host-check",
       "type": "boolean",
       "default": false,
-      "description": "Don't verify connected clients are part of allowed hosts."
+      "description": "Don't verify connected clients are part of allowed hosts. This option has no effect when using the 'application' or other esbuild-based builders."
     },
     {
       "name": "force-esbuild",
@@ -81,6 +88,11 @@
       "description": "Port to listen on."
     },
     {
+      "name": "prebundle",
+      "type": "boolean",
+      "description": "Enable and control the Vite-based development server's prebundling capabilities. To enable prebundling, the Angular CLI cache must also be enabled. This option has no effect when using the 'browser' or other Webpack-based builders."
+    },
+    {
       "name": "project",
       "type": "string",
       "description": "The name of the project to build. Can be an application or a library.",
@@ -94,7 +106,7 @@
     {
       "name": "public-host",
       "type": "string",
-      "description": "The URL that the browser client (or live-reload client, if enabled) should use to connect to the development server. Use for a complex dev server setup, such as one with reverse proxies."
+      "description": "The URL that the browser client (or live-reload client, if enabled) should use to connect to the development server. Use for a complex dev server setup, such as one with reverse proxies. This option has no effect when using the 'application' or other esbuild-based builders."
     },
     {
       "name": "serve-path",

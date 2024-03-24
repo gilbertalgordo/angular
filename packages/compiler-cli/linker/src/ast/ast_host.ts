@@ -51,6 +51,11 @@ export interface AstHost<TExpression> {
   parseBooleanLiteral(bool: TExpression): boolean;
 
   /**
+   * Returns `true` if the value corresponds to `null`.
+   */
+  isNull(node: TExpression): boolean;
+
+  /**
    * Return `true` if the given expression is an array literal, or false otherwise.
    */
   isArrayLiteral(node: TExpression): boolean;
@@ -79,6 +84,11 @@ export interface AstHost<TExpression> {
    * statement, extracting the returned expression, or throw if it is not possible.
    */
   parseReturnValue(fn: TExpression): TExpression;
+
+  /**
+   * Returns the parameter expressions for the function, or throw if it is not a function.
+   */
+  parseParameters(fn: TExpression): TExpression[];
 
   /**
    * Return true if the given expression is a call expression, or false otherwise.

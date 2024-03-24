@@ -12,9 +12,11 @@
 //
 // no code actually imports these symbols from the @angular/core entry point
 export {
-  compileNgModuleFactory as ɵcompileNgModuleFactory,
   isBoundToModule as ɵisBoundToModule
-} from './application_ref';
+} from './application/application_ref';
+export {
+  compileNgModuleFactory as ɵcompileNgModuleFactory,
+} from './application/application_ngmodule_factory_compiler';
 export {
   injectChangeDetectorRef as ɵinjectChangeDetectorRef,
 } from './change_detection/change_detector_ref';
@@ -48,11 +50,11 @@ export {
 export {
   AttributeMarker as ɵAttributeMarker,
   ComponentDef as ɵComponentDef,
+  ComponentDebugMetadata as ɵComponentDebugMetadata,
   ComponentFactory as ɵRender3ComponentFactory,
   ComponentRef as ɵRender3ComponentRef,
   ComponentType as ɵComponentType,
   CssSelectorList as ɵCssSelectorList,
-  detectChanges as ɵdetectChanges,
   DirectiveDef as ɵDirectiveDef,
   DirectiveType as ɵDirectiveType,
   getDirectives as ɵgetDirectives,
@@ -66,6 +68,7 @@ export {
   RenderFlags as ɵRenderFlags,
   setClassMetadata as ɵsetClassMetadata,
   setClassMetadataAsync as ɵsetClassMetadataAsync,
+  ɵsetClassDebugInfo,
   setLocaleId as ɵsetLocaleId,
   store as ɵstore,
   ɵDeferBlockDependencyInterceptor,
@@ -96,6 +99,7 @@ export {
   ɵɵComponentDeclaration,
   ɵɵconditional,
   ɵɵcontentQuery,
+  ɵɵcontentQuerySignal,
   ɵɵcomponentInstance,
   ɵɵCopyDefinitionFeature,
   ɵɵdefineComponent,
@@ -168,6 +172,7 @@ export {
   ɵɵpureFunction7,
   ɵɵpureFunction8,
   ɵɵpureFunctionV,
+  ɵɵqueryAdvance,
   ɵɵqueryRefresh,
   ɵɵreference,
   ɵɵresetView,
@@ -224,6 +229,7 @@ export {
   ɵɵdeferPrefetchOnHover,
   ɵɵdeferPrefetchOnInteraction,
   ɵɵdeferPrefetchOnViewport,
+  ɵɵdeferEnableTimerScheduling,
   ɵɵtext,
   ɵɵtextInterpolate,
   ɵɵtextInterpolate1,
@@ -236,6 +242,10 @@ export {
   ɵɵtextInterpolate8,
   ɵɵtextInterpolateV,
   ɵɵviewQuery,
+  ɵɵviewQuerySignal,
+  ɵɵtwoWayProperty,
+  ɵɵtwoWayBindingSet,
+  ɵɵtwoWayListener,
   ɵgetUnknownElementStrictMode,
   ɵsetUnknownElementStrictMode,
   ɵgetUnknownPropertyStrictMode,
@@ -268,6 +278,7 @@ export {
 export {
   FactoryTarget as ɵɵFactoryTarget,
   ɵɵngDeclareClassMetadata,
+  ɵɵngDeclareClassMetadataAsync,
   ɵɵngDeclareComponent,
   ɵɵngDeclareDirective,
   ɵɵngDeclareFactory,
@@ -283,10 +294,7 @@ export {
   isNgModule as ɵisNgModule
 } from './render3/jit/util';
 export { Profiler as ɵProfiler, ProfilerEvent as ɵProfilerEvent } from './render3/profiler';
-export {
-  publishDefaultGlobalUtils as ɵpublishDefaultGlobalUtils
-,
-  publishGlobalUtil as ɵpublishGlobalUtil} from './render3/util/global_utils';
+export { GlobalDevModeUtils as ɵGlobalDevModeUtils } from './render3/util/global_utils';
 export {ViewRef as ɵViewRef} from './render3/view_ref';
 export {
   bypassSanitizationTrustHtml as ɵbypassSanitizationTrustHtml,
@@ -311,9 +319,10 @@ export {
 export {
   noSideEffects as ɵnoSideEffects,
 } from './util/closure';
-export { AfterRenderEventManager as ɵAfterRenderEventManager } from './render3/after_render_hooks';
+export { AfterRenderEventManager as ɵAfterRenderEventManager, internalAfterNextRender as ɵinternalAfterNextRender } from './render3/after_render_hooks';
 export {depsTracker as ɵdepsTracker, USE_RUNTIME_DEPS_TRACKER_FOR_JIT as ɵUSE_RUNTIME_DEPS_TRACKER_FOR_JIT} from './render3/deps_tracker/deps_tracker';
 export {generateStandaloneInDeclarationsError as ɵgenerateStandaloneInDeclarationsError} from './render3/jit/module';
-export {getAsyncClassMetadata as ɵgetAsyncClassMetadata} from './render3/metadata';
+export {getAsyncClassMetadataFn as ɵgetAsyncClassMetadataFn} from './render3/metadata';
+export {InputFlags as ɵɵInputFlags} from './render3/interfaces/input_flags';
 
 // clang-format on

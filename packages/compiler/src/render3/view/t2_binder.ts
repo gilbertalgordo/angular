@@ -8,11 +8,10 @@
 
 import {AST, BindingPipe, ImplicitReceiver, PropertyRead, PropertyWrite, RecursiveAstVisitor, SafePropertyRead} from '../../expression_parser/ast';
 import {SelectorMatcher} from '../../selector';
-import {BoundAttribute, BoundDeferredTrigger, BoundEvent, BoundText, Content, DeferredBlock, DeferredBlockError, DeferredBlockLoading, DeferredBlockPlaceholder, DeferredTrigger, Element, ForLoopBlock, ForLoopBlockEmpty, HoverDeferredTrigger, Icu, IfBlock, IfBlockBranch, InteractionDeferredTrigger, Node, Reference, SwitchBlock, SwitchBlockCase, Template, Text, TextAttribute, Variable, ViewportDeferredTrigger, Visitor} from '../r3_ast';
+import {BoundAttribute, BoundEvent, BoundText, Comment, Content, DeferredBlock, DeferredBlockError, DeferredBlockLoading, DeferredBlockPlaceholder, DeferredTrigger, Element, ForLoopBlock, ForLoopBlockEmpty, HoverDeferredTrigger, Icu, IfBlock, IfBlockBranch, InteractionDeferredTrigger, Node, Reference, SwitchBlock, SwitchBlockCase, Template, Text, TextAttribute, UnknownBlock, Variable, ViewportDeferredTrigger, Visitor} from '../r3_ast';
 
 import {BoundTarget, DirectiveMeta, ReferenceTarget, ScopedNode, Target, TargetBinder} from './t2_api';
-import {createCssSelector} from './template';
-import {getAttrsForDirectiveMatching} from './util';
+import {createCssSelectorFromNode} from './util';
 
 /**
  * Processes `Target`s with a given set of directives and performs a binding operation, which
@@ -70,6 +69,11 @@ class Scope implements Visitor {
   readonly namedEntities = new Map<string, Reference|Variable>();
 
   /**
+   * Set of elements that belong to this scope.
+   */
+  readonly elementsInScope = new Set<Element>();
+
+  /**
    * Child `Scope`s for immediately nested `ScopedNode`s.
    */
   readonly childScopes = new Map<ScopedNode, Scope>();
@@ -113,7 +117,7 @@ class Scope implements Visitor {
       nodeOrNodes.children.forEach(node => node.visit(this));
     } else if (nodeOrNodes instanceof ForLoopBlock) {
       this.visitVariable(nodeOrNodes.item);
-      Object.values(nodeOrNodes.contextVariables).forEach(v => this.visitVariable(v));
+      nodeOrNodes.contextVariables.forEach(v => this.visitVariable(v));
       nodeOrNodes.children.forEach(node => node.visit(this));
     } else if (
         nodeOrNodes instanceof SwitchBlockCase || nodeOrNodes instanceof ForLoopBlockEmpty ||
@@ -133,6 +137,8 @@ class Scope implements Visitor {
 
     // Recurse into the `Element`'s children.
     element.children.forEach(node => node.visit(this));
+
+    this.elementsInScope.add(element);
   }
 
   visitTemplate(template: Template) {
@@ -207,6 +213,7 @@ class Scope implements Visitor {
   visitTextAttribute(attr: TextAttribute) {}
   visitIcu(icu: Icu) {}
   visitDeferredTrigger(trigger: DeferredTrigger) {}
+  visitUnknownBlock(block: UnknownBlock) {}
 
   private maybeDeclare(thing: Reference|Variable) {
     // Declare something with a name, as long as that name isn't taken.
@@ -259,7 +266,7 @@ class Scope implements Visitor {
  * Usually used via the static `apply()` method.
  */
 class DirectiveBinder<DirectiveT extends DirectiveMeta> implements Visitor {
-  // Indicates whether we are visiting elements within a {#defer} block
+  // Indicates whether we are visiting elements within a `defer` block
   private isInDeferBlock = false;
 
   private constructor(
@@ -306,17 +313,17 @@ class DirectiveBinder<DirectiveT extends DirectiveMeta> implements Visitor {
   }
 
   visitElement(element: Element): void {
-    this.visitElementOrTemplate(element.name, element);
+    this.visitElementOrTemplate(element);
   }
 
   visitTemplate(template: Template): void {
-    this.visitElementOrTemplate('ng-template', template);
+    this.visitElementOrTemplate(template);
   }
 
-  visitElementOrTemplate(elementName: string, node: Element|Template): void {
+  visitElementOrTemplate(node: Element|Template): void {
     // First, determine the HTML shape of the node for the purpose of directive matching.
     // Do this by building up a `CssSelector` for the node.
-    const cssSelector = createCssSelector(elementName, getAttrsForDirectiveMatching(node));
+    const cssSelector = createCssSelectorFromNode(node);
 
     // Next, use the `SelectorMatcher` to get the list of directives on the node.
     const directives: DirectiveT[] = [];
@@ -417,7 +424,7 @@ class DirectiveBinder<DirectiveT extends DirectiveMeta> implements Visitor {
 
   visitForLoopBlock(block: ForLoopBlock) {
     block.item.visit(this);
-    Object.values(block.contextVariables).forEach(v => v.visit(this));
+    block.contextVariables.forEach(v => v.visit(this));
     block.children.forEach(node => node.visit(this));
     block.empty?.visit(this);
   }
@@ -447,6 +454,7 @@ class DirectiveBinder<DirectiveT extends DirectiveMeta> implements Visitor {
   visitBoundText(text: BoundText): void {}
   visitIcu(icu: Icu): void {}
   visitDeferredTrigger(trigger: DeferredTrigger): void {}
+  visitUnknownBlock(block: UnknownBlock) {}
 }
 
 /**
@@ -464,7 +472,7 @@ class TemplateBinder extends RecursiveAstVisitor implements Visitor {
   private constructor(
       private bindings: Map<AST, Reference|Variable>,
       private symbols: Map<Reference|Variable, ScopedNode>, private usedPipes: Set<string>,
-      private eagerPipes: Set<string>, private deferBlocks: Set<DeferredBlock>,
+      private eagerPipes: Set<string>, private deferBlocks: [DeferredBlock, Scope][],
       private nestingLevel: Map<ScopedNode, number>, private scope: Scope,
       private rootNode: ScopedNode|null, private level: number) {
     super();
@@ -502,7 +510,7 @@ class TemplateBinder extends RecursiveAstVisitor implements Visitor {
     nestingLevel: Map<ScopedNode, number>,
     usedPipes: Set<string>,
     eagerPipes: Set<string>,
-    deferBlocks: Set<DeferredBlock>,
+    deferBlocks: [DeferredBlock, Scope][],
   } {
     const expressions = new Map<AST, Reference|Variable>();
     const symbols = new Map<Variable|Reference, Template>();
@@ -510,7 +518,7 @@ class TemplateBinder extends RecursiveAstVisitor implements Visitor {
     const usedPipes = new Set<string>();
     const eagerPipes = new Set<string>();
     const template = nodes instanceof Template ? nodes : null;
-    const deferBlocks = new Set<DeferredBlock>();
+    const deferBlocks: [DeferredBlock, Scope][] = [];
     // The top-level template has nesting level 0.
     const binder = new TemplateBinder(
         expressions, symbols, usedPipes, eagerPipes, deferBlocks, nestingLevel, scope, template, 0);
@@ -535,13 +543,21 @@ class TemplateBinder extends RecursiveAstVisitor implements Visitor {
       this.nestingLevel.set(nodeOrNodes, this.level);
     } else if (nodeOrNodes instanceof ForLoopBlock) {
       this.visitNode(nodeOrNodes.item);
-      Object.values(nodeOrNodes.contextVariables).forEach(v => this.visitNode(v));
+      nodeOrNodes.contextVariables.forEach(v => this.visitNode(v));
       nodeOrNodes.trackBy.visit(this);
       nodeOrNodes.children.forEach(this.visitNode);
       this.nestingLevel.set(nodeOrNodes, this.level);
+    } else if (nodeOrNodes instanceof DeferredBlock) {
+      if (this.scope.rootNode !== nodeOrNodes) {
+        throw new Error(
+            `Assertion error: resolved incorrect scope for deferred block ${nodeOrNodes}`);
+      }
+      this.deferBlocks.push([nodeOrNodes, this.scope]);
+      nodeOrNodes.children.forEach(node => node.visit(this));
+      this.nestingLevel.set(nodeOrNodes, this.level);
     } else if (
         nodeOrNodes instanceof SwitchBlockCase || nodeOrNodes instanceof ForLoopBlockEmpty ||
-        nodeOrNodes instanceof DeferredBlock || nodeOrNodes instanceof DeferredBlockError ||
+        nodeOrNodes instanceof DeferredBlockError ||
         nodeOrNodes instanceof DeferredBlockPlaceholder ||
         nodeOrNodes instanceof DeferredBlockLoading) {
       nodeOrNodes.children.forEach(node => node.visit(this));
@@ -590,6 +606,8 @@ class TemplateBinder extends RecursiveAstVisitor implements Visitor {
   visitText(text: Text) {}
   visitContent(content: Content) {}
   visitTextAttribute(attribute: TextAttribute) {}
+  visitUnknownBlock(block: UnknownBlock) {}
+  visitDeferredTrigger(): void {}
   visitIcu(icu: Icu): void {
     Object.keys(icu.vars).forEach(key => icu.vars[key].visit(this));
     Object.keys(icu.placeholders).forEach(key => icu.placeholders[key].visit(this));
@@ -606,18 +624,12 @@ class TemplateBinder extends RecursiveAstVisitor implements Visitor {
   }
 
   visitDeferredBlock(deferred: DeferredBlock) {
-    this.deferBlocks.add(deferred);
     this.ingestScopedNode(deferred);
-
+    deferred.triggers.when?.value.visit(this);
+    deferred.prefetchTriggers.when?.value.visit(this);
     deferred.placeholder && this.visitNode(deferred.placeholder);
     deferred.loading && this.visitNode(deferred.loading);
     deferred.error && this.visitNode(deferred.error);
-  }
-
-  visitDeferredTrigger(trigger: DeferredTrigger): void {
-    if (trigger instanceof BoundDeferredTrigger) {
-      trigger.value.visit(this);
-    }
   }
 
   visitDeferredBlockPlaceholder(block: DeferredBlockPlaceholder) {
@@ -720,6 +732,12 @@ class TemplateBinder extends RecursiveAstVisitor implements Visitor {
  * See `BoundTarget` for documentation on the individual methods.
  */
 export class R3BoundTarget<DirectiveT extends DirectiveMeta> implements BoundTarget<DirectiveT> {
+  /** Deferred blocks, ordered as they appear in the template. */
+  private deferredBlocks: DeferredBlock[];
+
+  /** Map of deferred blocks to their scope. */
+  private deferredScopes: Map<DeferredBlock, Scope>;
+
   constructor(
       readonly target: Target, private directives: Map<Element|Template, DirectiveT[]>,
       private eagerDirectives: DirectiveT[],
@@ -732,7 +750,10 @@ export class R3BoundTarget<DirectiveT extends DirectiveMeta> implements BoundTar
       private nestingLevel: Map<ScopedNode, number>,
       private scopedNodeEntities: Map<ScopedNode|null, ReadonlySet<Reference|Variable>>,
       private usedPipes: Set<string>, private eagerPipes: Set<string>,
-      private deferredBlocks: Set<DeferredBlock>) {}
+      rawDeferred: [DeferredBlock, Scope][]) {
+    this.deferredBlocks = rawDeferred.map(current => current[0]);
+    this.deferredScopes = new Map(rawDeferred);
+  }
 
   getEntitiesInScope(node: ScopedNode|null): ReadonlySet<Reference|Variable> {
     return this.scopedNodeEntities.get(node) ?? new Set();
@@ -783,9 +804,8 @@ export class R3BoundTarget<DirectiveT extends DirectiveMeta> implements BoundTar
   }
 
   getDeferBlocks(): DeferredBlock[] {
-    return Array.from(this.deferredBlocks);
+    return this.deferredBlocks;
   }
-
 
   getDeferredTriggerTarget(block: DeferredBlock, trigger: DeferredTrigger): Element|null {
     // Only triggers that refer to DOM nodes can be resolved.
@@ -797,9 +817,30 @@ export class R3BoundTarget<DirectiveT extends DirectiveMeta> implements BoundTar
 
     const name = trigger.reference;
 
-    // TODO(crisbeto): account for `viewport` trigger without a `reference`.
     if (name === null) {
-      return null;
+      let trigger: Element|null = null;
+
+      if (block.placeholder !== null) {
+        for (const child of block.placeholder.children) {
+          // Skip over comment nodes. Currently by default the template parser doesn't capture
+          // comments, but we have a safeguard here just in case since it can be enabled.
+          if (child instanceof Comment) {
+            continue;
+          }
+
+          // We can only infer the trigger if there's one root element node. Any other
+          // nodes at the root make it so that we can't infer the trigger anymore.
+          if (trigger !== null) {
+            return null;
+          }
+
+          if (child instanceof Element) {
+            trigger = child;
+          }
+        }
+      }
+
+      return trigger;
     }
 
     const outsideRef = this.findEntityInScope(block, name);
@@ -815,7 +856,7 @@ export class R3BoundTarget<DirectiveT extends DirectiveMeta> implements BoundTar
     }
 
     // If the trigger couldn't be found in the main block, check the
-    // placeholder  block which is shown before the main block has loaded.
+    // placeholder block which is shown before the main block has loaded.
     if (block.placeholder !== null) {
       const refInPlaceholder = this.findEntityInScope(block.placeholder, name);
       const targetInPlaceholder =
@@ -827,6 +868,28 @@ export class R3BoundTarget<DirectiveT extends DirectiveMeta> implements BoundTar
     }
 
     return null;
+  }
+
+  isDeferred(element: Element): boolean {
+    for (const block of this.deferredBlocks) {
+      if (!this.deferredScopes.has(block)) {
+        continue;
+      }
+
+      const stack: Scope[] = [this.deferredScopes.get(block)!];
+
+      while (stack.length > 0) {
+        const current = stack.pop()!;
+
+        if (current.elementsInScope.has(element)) {
+          return true;
+        }
+
+        stack.push(...current.childScopes.values());
+      }
+    }
+
+    return false;
   }
 
   /**

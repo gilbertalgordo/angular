@@ -25,6 +25,17 @@ export interface PluginConfig {
    * of its value in tsconfig.json.
    */
   forceStrictTemplates?: true;
+
+  /**
+   * If false, disables parsing control flow blocks in the compiler. Should be used only when older
+   * versions of Angular that do not support blocks (pre-v17) used with the language service.
+   */
+  enableBlockSyntax?: false;
+
+  /**
+   * Version of `@angular/core` that was detected in the user's workspace.
+   */
+  angularCoreVersion?: string;
 }
 
 export type GetTcbResponse = {
@@ -58,6 +69,7 @@ export interface NgLanguageService extends ts.LanguageService {
   getComponentLocationsForTemplate(fileName: string): GetComponentLocationsForTemplateResponse;
   getTemplateLocationForComponent(fileName: string, position: number):
       GetTemplateLocationForComponentResponse;
+  getTypescriptLanguageService(): ts.LanguageService;
 }
 
 export function isNgLanguageService(ls: ts.LanguageService|

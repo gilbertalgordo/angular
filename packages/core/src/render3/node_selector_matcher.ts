@@ -10,7 +10,8 @@ import '../util/ng_dev_mode';
 
 import {assertDefined, assertEqual, assertNotEqual} from '../util/assert';
 
-import {AttributeMarker, TAttributes, TNode, TNodeType} from './interfaces/node';
+import {AttributeMarker} from './interfaces/attribute_marker';
+import {TAttributes, TNode, TNodeType} from './interfaces/node';
 import {CssSelector, CssSelectorList, SelectorFlags} from './interfaces/projection';
 import {classIndexOf} from './styling/class_differ';
 import {isNameOnlyAttributeMarker} from './util/attrs_utils';
@@ -20,46 +21,42 @@ const NG_TEMPLATE_SELECTOR = 'ng-template';
 /**
  * Search the `TAttributes` to see if it contains `cssClassToMatch` (case insensitive)
  *
+ * @param tNode static data of the node to match
  * @param attrs `TAttributes` to search through.
  * @param cssClassToMatch class to match (lowercase)
  * @param isProjectionMode Whether or not class matching should look into the attribute `class` in
  *    addition to the `AttributeMarker.Classes`.
  */
 function isCssClassMatching(
-    attrs: TAttributes, cssClassToMatch: string, isProjectionMode: boolean): boolean {
-  // TODO(misko): The fact that this function needs to know about `isProjectionMode` seems suspect.
-  // It is strange to me that sometimes the class information comes in form of `class` attribute
-  // and sometimes in form of `AttributeMarker.Classes`. Some investigation is needed to determine
-  // if that is the right behavior.
+    tNode: TNode, attrs: TAttributes, cssClassToMatch: string, isProjectionMode: boolean): boolean {
   ngDevMode &&
       assertEqual(
           cssClassToMatch, cssClassToMatch.toLowerCase(), 'Class name expected to be lowercase.');
   let i = 0;
-  // Indicates whether we are processing value from the implicit
-  // attribute section (i.e. before the first marker in the array).
-  let isImplicitAttrsSection = true;
-  while (i < attrs.length) {
-    let item = attrs[i++];
-    if (typeof item === 'string' && isImplicitAttrsSection) {
-      const value = attrs[i++] as string;
-      if (isProjectionMode && item === 'class') {
-        // We found a `class` attribute in the implicit attribute section,
-        // check if it matches the value of the `cssClassToMatch` argument.
-        if (classIndexOf(value.toLowerCase(), cssClassToMatch, 0) !== -1) {
-          return true;
-        }
+  if (isProjectionMode) {
+    for (; i < attrs.length && typeof attrs[i] === 'string'; i += 2) {
+      // Search for an implicit `class` attribute and check if its value matches `cssClassToMatch`.
+      if (attrs[i] === 'class' &&
+          classIndexOf((attrs[i + 1] as string).toLowerCase(), cssClassToMatch, 0) !== -1) {
+        return true;
       }
-    } else if (item === AttributeMarker.Classes) {
-      // We found the classes section. Start searching for the class.
-      while (i < attrs.length && typeof (item = attrs[i++]) == 'string') {
-        // while we have strings
-        if (item.toLowerCase() === cssClassToMatch) return true;
+    }
+  } else if (isInlineTemplate(tNode)) {
+    // Matching directives (i.e. when not matching for projection mode) should not consider the
+    // class bindings that are present on inline templates, as those class bindings only target
+    // the root node of the template, not the template itself.
+    return false;
+  }
+
+  // Resume the search for classes after the `Classes` marker.
+  i = attrs.indexOf(AttributeMarker.Classes, i);
+  if (i > -1) {
+    // We found the classes section. Start searching for the class.
+    let item: TAttributes[number];
+    while (++i < attrs.length && typeof (item = attrs[i]) === 'string') {
+      if (item.toLowerCase() === cssClassToMatch) {
+        return true;
       }
-      return false;
-    } else if (typeof item === 'number') {
-      // We've came across a first marker, which indicates
-      // that the implicit attribute section is over.
-      isImplicitAttrsSection = false;
     }
   }
   return false;
@@ -95,7 +92,7 @@ function hasTagAndTypeMatch(
 /**
  * A utility function to match an Ivy node static data against a simple CSS selector
  *
- * @param node static data of the node to match
+ * @param tNode static data of the node to match
  * @param selector The selector to try matching against the node.
  * @param isProjectionMode if `true` we are matching for content projection, otherwise we are doing
  * directive matching.
@@ -105,10 +102,10 @@ export function isNodeMatchingSelector(
     tNode: TNode, selector: CssSelector, isProjectionMode: boolean): boolean {
   ngDevMode && assertDefined(selector[0], 'Selector should have a tag name');
   let mode: SelectorFlags = SelectorFlags.ELEMENT;
-  const nodeAttrs = tNode.attrs || [];
+  const nodeAttrs = tNode.attrs;
 
   // Find the index of first attribute that has no value, only a name.
-  const nameOnlyMarkerIdx = getNameOnlyMarkerIndex(nodeAttrs);
+  const nameOnlyMarkerIdx = nodeAttrs !== null ? getNameOnlyMarkerIndex(nodeAttrs) : 0;
 
   // When processing ":not" selectors, we skip to the next ":not" if the
   // current one doesn't match
@@ -138,22 +135,15 @@ export function isNodeMatchingSelector(
         if (isPositive(mode)) return false;
         skipToNextSelector = true;
       }
-    } else {
-      const selectorAttrValue = mode & SelectorFlags.CLASS ? current : selector[++i];
-
-      // special case for matching against classes when a tNode has been instantiated with
-      // class and style values as separate attribute values (e.g. ['title', CLASS, 'foo'])
-      if ((mode & SelectorFlags.CLASS) && tNode.attrs !== null) {
-        if (!isCssClassMatching(tNode.attrs, selectorAttrValue as string, isProjectionMode)) {
-          if (isPositive(mode)) return false;
-          skipToNextSelector = true;
-        }
-        continue;
+    } else if (mode & SelectorFlags.CLASS) {
+      if (nodeAttrs === null || !isCssClassMatching(tNode, nodeAttrs, current, isProjectionMode)) {
+        if (isPositive(mode)) return false;
+        skipToNextSelector = true;
       }
-
-      const attrName = (mode & SelectorFlags.CLASS) ? 'class' : current;
+    } else {
+      const selectorAttrValue = selector[++i];
       const attrIndexInNode =
-          findAttrIndexInNode(attrName, nodeAttrs, isInlineTemplate(tNode), isProjectionMode);
+          findAttrIndexInNode(current, nodeAttrs, isInlineTemplate(tNode), isProjectionMode);
 
       if (attrIndexInNode === -1) {
         if (isPositive(mode)) return false;
@@ -168,18 +158,15 @@ export function isNodeMatchingSelector(
         } else {
           ngDevMode &&
               assertNotEqual(
-                  nodeAttrs[attrIndexInNode], AttributeMarker.NamespaceURI,
+                  nodeAttrs![attrIndexInNode], AttributeMarker.NamespaceURI,
                   'We do not match directives on namespaced attributes');
           // we lowercase the attribute value to be able to match
           // selectors without case-sensitivity
           // (selectors are already in lowercase when generated)
-          nodeAttrValue = (nodeAttrs[attrIndexInNode + 1] as string).toLowerCase();
+          nodeAttrValue = (nodeAttrs![attrIndexInNode + 1] as string).toLowerCase();
         }
 
-        const compareAgainstClassName = mode & SelectorFlags.CLASS ? nodeAttrValue : null;
-        if (compareAgainstClassName &&
-                classIndexOf(compareAgainstClassName, selectorAttrValue as string, 0) !== -1 ||
-            mode & SelectorFlags.ATTRIBUTE && selectorAttrValue !== nodeAttrValue) {
+        if (mode & SelectorFlags.ATTRIBUTE && selectorAttrValue !== nodeAttrValue) {
           if (isPositive(mode)) return false;
           skipToNextSelector = true;
         }

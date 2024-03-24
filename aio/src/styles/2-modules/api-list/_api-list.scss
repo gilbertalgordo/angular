@@ -94,6 +94,10 @@ aio-api-list {
     h2 {
       margin-top: 16px;
       margin-bottom: 16px;
+
+      & .deprecated-api-item {
+        text-decoration: line-through;
+      }
     }
 
     /* API CLASS LIST */
@@ -108,6 +112,7 @@ aio-api-list {
       }
 
       li {
+        font-family: "Roboto Mono", monospace;
         @include mixins.font-size(14);
         margin: 8px 0;
         @include mixins.line-height(14);

@@ -308,7 +308,7 @@ export interface Directive {
    * If a binding changes, Angular updates the directive's host element.
    *
    * When the key is a property of the host element, the property value is
-   * the propagated to the specified DOM property.
+   * propagated to the specified DOM property.
    *
    * When the key is a static attribute in the DOM, the attribute value
    * is propagated to the specified property in the host element.
@@ -639,12 +639,6 @@ export interface Component extends Directive {
   standalone?: boolean;
 
   /**
-   * // TODO(signals): Remove internal and add public documentation.
-   * @internal
-   */
-  signals?: boolean;
-
-  /**
    * The imports property specifies the standalone component's template dependencies — those
    * directives, components, and pipes that can be used within its template. Standalone components
    * can import other standalone components, directives, and pipes as well as existing NgModules.
@@ -656,6 +650,17 @@ export interface Component extends Directive {
    * guide](guide/standalone-components).
    */
   imports?: (Type<any>|ReadonlyArray<any>)[];
+
+  /**
+   * The `deferredImports` property specifies a standalone component's template dependencies,
+   * which should be defer-loaded as a part of the `@defer` block. Angular *always* generates
+   * dynamic imports for such symbols and removes the regular/eager import. Make sure that imports
+   * which bring symbols used in the `deferredImports` don't contain other symbols.
+   *
+   * Note: this is an internal-only field, use regular `@Component.imports` field instead.
+   * @internal
+   */
+  deferredImports?: (Type<any>|ReadonlyArray<any>)[];
 
   /**
    * The set of schemas that declare elements to be allowed in a standalone component. Elements and
@@ -838,6 +843,20 @@ export interface Input {
    * Function with which to transform the input value before assigning it to the directive instance.
    */
   transform?: (value: any) => any;
+
+  /**
+   * @internal
+   *
+   * Whether the input is a signal input.
+   *
+   * This option exists for JIT compatibility. Users are not expected to use this.
+   * Angular needs a way to capture inputs from classes so that the internal data
+   * structures can be set up. This needs to happen before the component is instantiated.
+   * Due to this, for JIT compilation, signal inputs need an additional decorator
+   * declaring the input. Angular provides a TS transformer to automatically handle this
+   * for JIT usage (e.g. in tests).
+   */
+  isSignal?: boolean;
 }
 
 /**

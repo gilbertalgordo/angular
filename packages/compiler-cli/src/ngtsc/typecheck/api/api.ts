@@ -11,7 +11,7 @@ import ts from 'typescript';
 
 import {ErrorCode} from '../../diagnostics';
 import {Reference} from '../../imports';
-import {ClassPropertyMapping, DirectiveTypeCheckMeta, HostDirectiveMeta, InputMapping} from '../../metadata';
+import {ClassPropertyMapping, DirectiveTypeCheckMeta, HostDirectiveMeta, InputMapping, PipeMeta} from '../../metadata';
 import {ClassDeclaration} from '../../reflection';
 
 
@@ -28,6 +28,7 @@ export interface TypeCheckableDirectiveMeta extends DirectiveMeta, DirectiveType
   isSignal: boolean;
   hostDirectives: HostDirectiveMeta[]|null;
   decorator: ts.Decorator|null;
+  isExplicitlyDeferred: boolean;
 }
 
 export type TemplateId = string&{__brand: 'TemplateId'};
@@ -73,7 +74,7 @@ export interface TypeCheckBlockMetadata {
   /*
    * Pipes used in the template of the component.
    */
-  pipes: Map<string, Reference<ClassDeclaration<ts.ClassDeclaration>>>;
+  pipes: Map<string, PipeMeta>;
 
   /**
    * Schemas that apply to this template.
@@ -84,6 +85,11 @@ export interface TypeCheckBlockMetadata {
    * A boolean indicating whether the component is standalone.
    */
   isStandalone: boolean;
+
+  /**
+   * A boolean indicating whether the component preserves whitespaces in its template.
+   */
+  preserveWhitespaces: boolean;
 }
 
 export interface TypeCtorMetadata {
@@ -274,6 +280,11 @@ export interface TypeCheckingConfig {
   checkQueries: false;
 
   /**
+   * Whether to check if control flow syntax will prevent a node from being projected.
+   */
+  controlFlowPreventingContentProjection: 'error'|'warning'|'suppress';
+
+  /**
    * Whether to use any generic types of the context component.
    *
    * If this is `true`, then if the context component has generic types, those will be mirrored in
@@ -319,6 +330,11 @@ export interface TypeCheckingConfig {
    * opportunities to improve their own developer experience.
    */
   suggestionsForSuboptimalTypeInference: boolean;
+
+  /**
+   * Whether the type of two-way bindings should be widened to allow `WritableSignal`.
+   */
+  allowSignalsInTwoWayBindings: boolean;
 }
 
 

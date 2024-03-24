@@ -10,7 +10,7 @@ import ts from 'typescript';
 
 import {absoluteFrom} from '../../../file_system';
 import {runInEachFileSystem} from '../../../file_system/testing';
-import {ReferenceEmitter} from '../../../imports';
+import {ImportedSymbolsTracker, ReferenceEmitter} from '../../../imports';
 import {CompoundMetadataReader, DtsMetadataReader, LocalMetadataRegistry} from '../../../metadata';
 import {PartialEvaluator} from '../../../partial_evaluator';
 import {NOOP_PERF_RECORDER} from '../../../perf';
@@ -110,6 +110,8 @@ runInEachFileSystem(() => {
         selector: '[dir]',
         isStructural: false,
         animationTriggerNames: null,
+        ngContentSelectors: null,
+        preserveWhitespaces: false,
       };
       matcher.addSelectables(CssSelector.parse('[dir]'), [dirMeta]);
 
@@ -172,14 +174,17 @@ runInEachFileSystem(() => {
         metaReader, new CompoundMetadataReader([metaReader, dtsReader]),
         new MetadataDtsModuleScopeResolver(dtsReader, null), refEmitter, null);
     const injectableRegistry = new InjectableClassRegistry(reflectionHost, /* isCore */ false);
+    const importTracker = new ImportedSymbolsTracker();
     const handler = new DirectiveDecoratorHandler(
         reflectionHost, evaluator, scopeRegistry, scopeRegistry, metaReader, injectableRegistry,
         refEmitter, referenceRegistry,
         /*isCore*/ false,
         /*strictCtorDeps*/ false,
         /*semanticDepGraphUpdater*/ null,
-        /*annotateForClosureCompiler*/ false, NOOP_PERF_RECORDER, /*includeClassMetadata*/ true,
-        /*compilationMode */ CompilationMode.FULL);
+        /*annotateForClosureCompiler*/ false, NOOP_PERF_RECORDER, importTracker,
+        /*includeClassMetadata*/ true,
+        /*compilationMode */ CompilationMode.FULL,
+        /*generateExtraImportsInLocalMode*/ false);
 
     const DirNode = getDeclaration(program, _('/entry.ts'), dirName, isNamedClassDeclaration);
 

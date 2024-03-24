@@ -160,6 +160,8 @@ export class Identifiers {
       o.ExternalReference = {name: 'ɵɵdeferPrefetchOnInteraction', moduleName: CORE};
   static deferPrefetchOnViewport:
       o.ExternalReference = {name: 'ɵɵdeferPrefetchOnViewport', moduleName: CORE};
+  static deferEnableTimerScheduling:
+      o.ExternalReference = {name: 'ɵɵdeferEnableTimerScheduling', moduleName: CORE};
 
   static conditional: o.ExternalReference = {name: 'ɵɵconditional', moduleName: CORE};
   static repeater: o.ExternalReference = {name: 'ɵɵrepeater', moduleName: CORE};
@@ -339,14 +341,26 @@ export class Identifiers {
 
   static declareClassMetadata:
       o.ExternalReference = {name: 'ɵɵngDeclareClassMetadata', moduleName: CORE};
+  static declareClassMetadataAsync:
+      o.ExternalReference = {name: 'ɵɵngDeclareClassMetadataAsync', moduleName: CORE};
   static setClassMetadata: o.ExternalReference = {name: 'ɵsetClassMetadata', moduleName: CORE};
   static setClassMetadataAsync:
       o.ExternalReference = {name: 'ɵsetClassMetadataAsync', moduleName: CORE};
-
+  static setClassDebugInfo: o.ExternalReference = {name: 'ɵsetClassDebugInfo', moduleName: CORE};
   static queryRefresh: o.ExternalReference = {name: 'ɵɵqueryRefresh', moduleName: CORE};
   static viewQuery: o.ExternalReference = {name: 'ɵɵviewQuery', moduleName: CORE};
   static loadQuery: o.ExternalReference = {name: 'ɵɵloadQuery', moduleName: CORE};
   static contentQuery: o.ExternalReference = {name: 'ɵɵcontentQuery', moduleName: CORE};
+
+  // Signal queries
+  static viewQuerySignal: o.ExternalReference = {name: 'ɵɵviewQuerySignal', moduleName: CORE};
+  static contentQuerySignal: o.ExternalReference = {name: 'ɵɵcontentQuerySignal', moduleName: CORE};
+  static queryAdvance: o.ExternalReference = {name: 'ɵɵqueryAdvance', moduleName: CORE};
+
+  // Two-way bindings
+  static twoWayProperty: o.ExternalReference = {name: 'ɵɵtwoWayProperty', moduleName: CORE};
+  static twoWayBindingSet: o.ExternalReference = {name: 'ɵɵtwoWayBindingSet', moduleName: CORE};
+  static twoWayListener: o.ExternalReference = {name: 'ɵɵtwoWayListener', moduleName: CORE};
 
   static NgOnChangesFeature: o.ExternalReference = {name: 'ɵɵNgOnChangesFeature', moduleName: CORE};
 
@@ -373,6 +387,11 @@ export class Identifiers {
     moduleName: CORE,
   };
 
+  static InputFlags: o.ExternalReference = {
+    name: 'ɵɵInputFlags',
+    moduleName: CORE,
+  };
+
   // sanitization-related functions
   static sanitizeHtml: o.ExternalReference = {name: 'ɵɵsanitizeHtml', moduleName: CORE};
   static sanitizeStyle: o.ExternalReference = {name: 'ɵɵsanitizeStyle', moduleName: CORE};
@@ -387,4 +406,9 @@ export class Identifiers {
       o.ExternalReference = {name: 'ɵɵtrustConstantResourceUrl', moduleName: CORE};
   static validateIframeAttribute:
       o.ExternalReference = {name: 'ɵɵvalidateIframeAttribute', moduleName: CORE};
+
+  // type-checking
+  static InputSignalBrandWriteType = {name: 'ɵINPUT_SIGNAL_BRAND_WRITE_TYPE', moduleName: CORE};
+  static UnwrapDirectiveSignalInputs = {name: 'ɵUnwrapDirectiveSignalInputs', moduleName: CORE};
+  static unwrapWritableSignal = {name: 'ɵunwrapWritableSignal', moduleName: CORE};
 }

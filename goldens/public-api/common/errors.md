@@ -7,6 +7,8 @@
 // @public
 export const enum RuntimeErrorCode {
     // (undocumented)
+    EQUALITY_NG_SWITCH_DIFFERENCE = 2001,
+    // (undocumented)
     INVALID_INPUT = 2952,
     // (undocumented)
     INVALID_LOADER_ARGUMENTS = 2959,
@@ -24,6 +26,8 @@ export const enum RuntimeErrorCode {
     NG_FOR_MISSING_DIFFER = -2200,
     // (undocumented)
     OVERSIZED_IMAGE = 2960,
+    // (undocumented)
+    OVERSIZED_PLACEHOLDER = 2965,
     // (undocumented)
     PARENT_NG_SWITCH_NOT_FOUND = 2000,
     // (undocumented)

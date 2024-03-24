@@ -135,6 +135,7 @@ The schemas configure options for the following builders.
 
 <!-- vale Angular.Google_WordListWarnings = NO -->
 
+*   [application](https://github.com/angular/angular-cli/blob/main/packages/angular_devkit/build_angular/src/builders/application/schema.json)
 *   [app-shell](https://github.com/angular/angular-cli/blob/main/packages/angular_devkit/build_angular/src/builders/app-shell/schema.json)
 *   [browser](https://github.com/angular/angular-cli/blob/main/packages/angular_devkit/build_angular/src/builders/browser/schema.json)
 *   [dev-server](https://github.com/angular/angular-cli/blob/main/packages/angular_devkit/build_angular/src/builders/dev-server/schema.json)
@@ -198,7 +199,7 @@ It has the following top-level properties.
 
 | PROPERTY        | Details                                                                                                                                                                                                                                                                                                              |
 |:---             |:---                                                                                                                                                                                                                                                                                                                      |
-| `builder`       | The npm package for the build tool used to create this target. The default builder for an application \(`ng build myApp`\) is `@angular-devkit/build-angular:browser`, which uses the [webpack](https://webpack.js.org) package bundler. <div class="alert is-helpful"> **NOTE**: A different builder is used for building a library \(`ng build myLib`\). </div> |
+| `builder`       | The npm package for the build tool used to create this target. The default builder for an application \(`ng build myApp`\) is `@angular-devkit/build-angular:application`, which uses the [esbuild](https://esbuild.github.io/) package bundler. <div class="alert is-helpful"> **NOTE**: A different builder is used for building a library \(`ng build myLib`\). </div> |
 | `options`       | This section contains default build target options, used when no named alternative configuration is specified. See the [Default build targets](#default-build-targets) section.                                                                                                                                                |
 | `configurations`| This section defines and names alternative configurations for different intended destinations. It contains a section for each named configuration, which sets the default options for that intended environment. See the [Alternate build configurations](#build-configs) section.                                             |
 
@@ -245,12 +246,11 @@ Some extra options can only be set through the configuration file, either by dir
 | `fileReplacements`         | An object containing files and their compile-time replacements. See more in [Configure target-specific file replacements](guide/build#configure-target-specific-file-replacements).                                                                                                                     |
 `index`                    | Configures the generation of the application's HTML index. See more in [Index configuration](#index-config). \(Only available in `browser` section.\)                                                                                                                                                   |                                                                                                        |
 
-
 <a id="complex-config"></a>
 
 ## Complex configuration values
 
-The `assets`, `index`, `styles`, and `scripts` options can have either simple path string values, or object values with specific fields.
+The `assets`, `index`, `outputPath`, `styles`, and `scripts` options can have either simple path string values, or object values with specific fields.
 The `sourceMap` and `optimization` options can be set to a simple Boolean value with a command flag. They can also be given a complex value using the configuration file.
 
 The following sections provide more details of how these complex values are used in each case.
@@ -426,7 +426,7 @@ See also [Using runtime-global libraries inside your application](guide/using-li
 
 ### Optimization configuration
 
-The `optimization` browser builder option can be either a Boolean or an Object for more fine-tune configuration.
+The `optimization` option can be either a Boolean or an Object for more fine-tune configuration.
 This option enables various optimizations of the build output, including:
 
 <!-- vale Angular.Angular_Spelling = NO-->
@@ -453,8 +453,9 @@ Several options can be used to fine-tune the optimization of an application.
 
 | Options          | Details                                                                                                                  | Value type | Default value |
 |:---              |:---                                                                                                                      |:---        |:---           |
-| `minify`         | Minify CSS definitions by removing extraneous whitespace and comments, merging identifiers, and minimizing values.        | `boolean`  | `true`        |
+| `minify`         | Minify CSS definitions by removing extraneous whitespace and comments, merging identifiers, and minimizing values.       | `boolean`  | `true`        |
 | `inlineCritical` | Extract and inline critical CSS definitions to improve [First Contentful Paint](https://web.dev/first-contentful-paint). | `boolean`  | `true`        |
+| `removeSpecialComments` | Remove comments in global CSS that contains `@license` or `@preserve` or that starts with `//!` or `/*!`.         | `boolean`  | `true`        |
 
 <div class="alert is-helpful">
 
@@ -487,7 +488,7 @@ You can supply a value such as the following to apply optimization to one or the
 
 <div class="alert is-helpful">
 
-For [Universal](guide/glossary#universal), you can reduce the code rendered in the HTML page by setting styles optimization to `true`.
+For [SSR](guide/glossary#server-side-rendering), you can reduce the code rendered in the HTML page by setting styles optimization to `true`.
 
 </div>
 
@@ -538,6 +539,18 @@ When supplying the value as a String the filename of the specified path will be 
 | `input`  | The path of a file to use for the application's generated HTML index.                                                                                                            | `string`   |               |
 | `output` | The output path of the application's generated HTML index file. The full provided path will be used and will be considered relative to the application's configured output path. | `string`   | `index.html`  |
 
+### Output path configuration
+
+The `outputPath` option can be either a String which will be used as the `base` value or an Object for more fine-tune configuration.
+
+Several options can be used to fine-tune the output structure of an application.
+
+| Options   | Details                                                                            | Value type | Default value |
+|:---       |:---                                                                                |:---        |:---           |
+| `base`    | Specify the output path relative to workspace root.                                | `string`   |               |
+| `browser` | The output directory name for your browser build is within the base output path. This can be safely served to users.       | `string`   | `browser`     |
+| `server`  | The output directory name of your server build within the output path base.        | `string`   | `server`      |
+| `media`   | The output directory name for your media files located within the output browser directory. These media files are commonly referred to as resources in CSS files. | `string`   | `media`       |
 
 <!-- links -->
 
@@ -547,4 +560,4 @@ When supplying the value as a String the filename of the specified path will be 
 
 <!-- end links -->
 
-@reviewed 2022-02-28
+@reviewed 2023-10-24

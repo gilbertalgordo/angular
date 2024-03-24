@@ -52,6 +52,10 @@ export class BabelAstHost implements AstHost<t.Expression> {
     }
   }
 
+  isNull(node: t.Expression): boolean {
+    return t.isNullLiteral(node);
+  }
+
   isArrayLiteral = t.isArrayExpression;
 
   parseArrayLiteral(array: t.Expression): t.Expression[] {
@@ -80,8 +84,9 @@ export class BabelAstHost implements AstHost<t.Expression> {
     return result;
   }
 
-  isFunctionExpression(node: t.Expression): node is Extract<t.Function, t.Expression> {
-    return t.isFunction(node);
+  isFunctionExpression(node: t.Expression):
+      node is Extract<t.Function|t.ArrowFunctionExpression, t.Expression> {
+    return t.isFunction(node) || t.isArrowFunctionExpression(node);
   }
 
   parseReturnValue(fn: t.Expression): t.Expression {
@@ -108,6 +113,14 @@ export class BabelAstHost implements AstHost<t.Expression> {
     }
 
     return stmt.argument;
+  }
+
+  parseParameters(fn: t.Expression): t.Expression[] {
+    assert(fn, this.isFunctionExpression, 'a function');
+    return fn.params.map(param => {
+      assert(param, t.isIdentifier, 'an identifier');
+      return param;
+    });
   }
 
   isCallExpression = t.isCallExpression;

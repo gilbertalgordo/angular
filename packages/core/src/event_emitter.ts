@@ -6,9 +6,13 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-/// <reference types="rxjs" />
-
+import {setActiveConsumer} from '@angular/core/primitives/signals';
 import {PartialObserver, Subject, Subscription} from 'rxjs';
+
+import {OutputRef} from './authoring/output/output_ref';
+import {isInInjectionContext} from './di/contextual';
+import {inject} from './di/injector_compatibility';
+import {DestroyRef} from './linker/destroy_ref';
 
 /**
  * Use in components with the `@Output` directive to emit custom events
@@ -61,7 +65,7 @@ import {PartialObserver, Subject, Subscription} from 'rxjs';
  * @see [Observables in Angular](guide/observables-in-angular)
  * @publicApi
  */
-export interface EventEmitter<T> extends Subject<T> {
+export interface EventEmitter<T> extends Subject<T>, OutputRef<T> {
   /**
    * @internal
    */
@@ -102,16 +106,28 @@ export interface EventEmitter<T> extends Subject<T> {
   subscribe(observerOrNext?: any, error?: any, complete?: any): Subscription;
 }
 
-class EventEmitter_ extends Subject<any> {
+class EventEmitter_ extends Subject<any> implements OutputRef<any> {
   __isAsync: boolean;  // tslint:disable-line
+  destroyRef: DestroyRef|undefined = undefined;
 
   constructor(isAsync: boolean = false) {
     super();
     this.__isAsync = isAsync;
+
+    // Attempt to retrieve a `DestroyRef` optionally.
+    // For backwards compatibility reasons, this cannot be required
+    if (isInInjectionContext()) {
+      this.destroyRef = inject(DestroyRef, {optional: true}) ?? undefined;
+    }
   }
 
   emit(value?: any) {
-    super.next(value);
+    const prevConsumer = setActiveConsumer(null);
+    try {
+      super.next(value);
+    } finally {
+      setActiveConsumer(prevConsumer);
+    }
   }
 
   override subscribe(observerOrNext?: any, error?: any, complete?: any): Subscription {

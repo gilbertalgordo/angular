@@ -9,19 +9,29 @@
 import {DOCUMENT, LocationChangeEvent, LocationChangeListener, PlatformLocation, ɵgetDOM as getDOM} from '@angular/common';
 import {Inject, Injectable, Optional, ɵWritable as Writable} from '@angular/core';
 import {Subject} from 'rxjs';
-import * as url from 'url';
 
 import {INITIAL_CONFIG, PlatformConfig} from './tokens';
 
-function parseUrl(urlStr: string) {
-  const parsedUrl = url.parse(urlStr);
+const RESOLVE_PROTOCOL = 'resolve:';
+
+function parseUrl(urlStr: string): {
+  hostname: string,
+  protocol: string,
+  port: string,
+  pathname: string,
+  search: string,
+  hash: string,
+} {
+  const {hostname, protocol, port, pathname, search, hash} =
+      new URL(urlStr, RESOLVE_PROTOCOL + '//');
+
   return {
-    hostname: parsedUrl.hostname || '',
-    protocol: parsedUrl.protocol || '',
-    port: parsedUrl.port || '',
-    pathname: parsedUrl.pathname || '',
-    search: parsedUrl.search || '',
-    hash: parsedUrl.hash || '',
+    hostname,
+    protocol: protocol === RESOLVE_PROTOCOL ? '' : protocol,
+    port,
+    pathname,
+    search,
+    hash,
   };
 }
 
@@ -55,15 +65,6 @@ export class ServerPlatformLocation implements PlatformLocation {
       this.search = url.search;
       this.hash = url.hash;
       this.href = _doc.location.href;
-    }
-    if (config.useAbsoluteUrl) {
-      if (!config.baseUrl) {
-        throw new Error(`"PlatformConfig.baseUrl" must be set if "useAbsoluteUrl" is true`);
-      }
-      const url = parseUrl(config.baseUrl);
-      this.protocol = url.protocol;
-      this.hostname = url.hostname;
-      this.port = url.port;
     }
   }
 

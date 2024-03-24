@@ -15,8 +15,8 @@ import {CompilationJob, CompilationUnit, ComponentCompilationJob, ViewCompilatio
  * either the `ctx` parameter to component functions (for the current view context) or to variables
  * that store those contexts (for contexts accessed via the `nextContext()` instruction).
  */
-export function phaseResolveContexts(cpl: CompilationJob): void {
-  for (const unit of cpl.units) {
+export function resolveContexts(job: CompilationJob): void {
+  for (const unit of job.units) {
     processLexicalScope(unit, unit.create);
     processLexicalScope(unit, unit.update);
   }
@@ -40,9 +40,15 @@ function processLexicalScope(view: CompilationUnit, ops: ir.OpList<ir.CreateOp|i
         }
         break;
       case ir.OpKind.Listener:
+      case ir.OpKind.TwoWayListener:
         processLexicalScope(view, op.handlerOps);
         break;
     }
+  }
+
+  if (view === view.job.root) {
+    // Prefer `ctx` of the root view to any variables which happen to contain the root context.
+    scope.set(view.xref, o.variable('ctx'));
   }
 
   for (const op of ops) {

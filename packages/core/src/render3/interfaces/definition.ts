@@ -6,6 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {InputSignalNode} from '../../authoring/input/input_signal_node';
 import {ModuleWithProviders, ProcessProvidersFunction} from '../../di/interface/provider';
 import {EnvironmentInjector} from '../../di/r3_injector';
 import {Type} from '../../interface/type';
@@ -15,7 +16,8 @@ import {FactoryFn} from '../definition_factory';
 
 import {TAttributes, TConstantsOrFactory} from './node';
 import {CssSelectorList} from './projection';
-import {TView} from './view';
+import type {TView} from './view';
+import {InputFlags} from './input_flags';
 
 
 /**
@@ -38,6 +40,13 @@ export type ViewQueriesFunction<T> = <U extends T>(rf: RenderFlags, ctx: U) => v
  */
 export type ContentQueriesFunction<T> =
     <U extends T>(rf: RenderFlags, ctx: U, directiveIndex: number) => void;
+
+export interface ClassDebugInfo {
+  className: string;
+  filePath?: string;
+  lineNumber?: number;
+  forbidOrphanRendering?: boolean;
+}
 
 /**
  * Flags passed into template functions to determine which blocks (i.e. creation, update)
@@ -80,8 +89,6 @@ export interface PipeType<T> extends Type<T> {
   ɵpipe: unknown;
 }
 
-
-
 /**
  * Runtime link information for Directives.
  *
@@ -98,16 +105,18 @@ export interface PipeType<T> extends Type<T> {
  */
 export interface DirectiveDef<T> {
   /**
-   * A dictionary mapping the inputs' minified property names to their public API names, which
-   * are their aliases if any, or their original unminified property names
-   * (as in `@Input('alias') propertyName: any;`).
+   * A dictionary mapping the inputs' public name to their minified property names
+   * (along with flags if there are any).
    */
-  readonly inputs: {[P in keyof T]: string};
+  readonly inputs: {[P in keyof T]?: string|[minifiedName: string, flags: InputFlags]};
 
   /**
    * A dictionary mapping the private names of inputs to their transformation functions.
    * Note: the private names are used for the keys, rather than the public ones, because public
    * names can be re-aliased in host directives which would invalidate the lookup.
+   *
+   * Note: Signal inputs will not have transforms captured here. This is because their
+   * transform function is already integrated into the `InputSignal`.
    */
   readonly inputTransforms: {[classPropertyName: string]: InputTransformFunction}|null;
 
@@ -116,20 +125,20 @@ export interface DirectiveDef<T> {
    * used to do further processing after the `inputs` have been inverted.
    */
   readonly inputConfig:
-      {[classPropertyName: string]: string|[string, string, InputTransformFunction?]};
+      {[P in keyof T]?: string|[InputFlags, string, string?, InputTransformFunction?]};
 
   /**
    * @deprecated This is only here because `NgOnChanges` incorrectly uses declared name instead of
    * public or minified name.
    */
-  readonly declaredInputs: {[P in keyof T]: string};
+  readonly declaredInputs: Record<string, string>;
 
   /**
    * A dictionary mapping the outputs' minified property names to their public API names, which
    * are their aliases if any, or their original unminified property names
    * (as in `@Output('alias') propertyName: any;`).
    */
-  readonly outputs: {[P in keyof T]: string};
+  readonly outputs: {[P in keyof T]?: string};
 
   /**
    * Function to create and refresh content queries associated with a given directive.
@@ -226,6 +235,12 @@ export interface DirectiveDef<T> {
   readonly features: DirectiveDefFeature[]|null;
 
   /**
+   * Info related to debugging/troubleshooting for this component. This info is only available in
+   * dev mode.
+   */
+  debugInfo: ClassDebugInfo|null;
+
+  /**
    * Function that will add the host directives to the list of matches during directive matching.
    * Patched onto the definition by the `HostDirectivesFeature`.
    * @param currentDef Definition that has been matched.
@@ -243,7 +258,8 @@ export interface DirectiveDef<T> {
 
   setInput:
       (<U extends T>(
-           this: DirectiveDef<U>, instance: U, value: any, publicName: string,
+           this: DirectiveDef<U>, instance: U,
+           inputSignalNode: null|InputSignalNode<unknown, unknown>, value: any, publicName: string,
            privateName: string) => void)|null;
 }
 
@@ -488,6 +504,8 @@ export type DirectiveDefListOrFactory = (() => DirectiveDefList)|DirectiveDefLis
 
 export type DirectiveDefList = (DirectiveDef<any>|ComponentDef<any>)[];
 
+export type DependencyDef = DirectiveDef<unknown>|ComponentDef<unknown>|PipeDef<unknown>;
+
 export type DirectiveTypesOrFactory = (() => DirectiveTypeList)|DirectiveTypeList;
 
 export type DirectiveTypeList =
@@ -515,11 +533,6 @@ export type PipeTypesOrFactory = (() => PipeTypeList)|PipeTypeList;
 
 export type PipeTypeList =
     (PipeType<any>|Type<any>/* Type as workaround for: Microsoft/TypeScript/issues/4881 */)[];
-
-
-// Note: This hack is necessary so we don't erroneously get a circular dependency
-// failure based on types.
-export const unusedValueExportToPlacateAjd = 1;
 
 /**
  * NgModule scope info as provided by AoT compiler

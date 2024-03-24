@@ -6,7 +6,7 @@ The directive ensures that the loading of the [Largest Contentful Paint (LCP)](h
 
 *   Automatically setting the `fetchpriority` attribute on the `<img>` tag
 *   Lazy loading other images by default
-*   Asserting that there is a corresponding preconnect link tag in the document head
+*   Automatically generating a preconnect link tag in the document head
 *   Automatically generating a `srcset` attribute
 *   Generating a [preload hint](https://developer.mozilla.org/en-US/docs/Web/HTML/Link_types/preload) if app is using SSR
 
@@ -63,9 +63,9 @@ Marking an image as `priority` applies the following optimizations:
 
 *   Sets `fetchpriority=high` (read more about priority hints [here](https://web.dev/priority-hints))
 *   Sets `loading=eager` (read more about native lazy loading [here](https://web.dev/browser-level-image-lazy-loading))
-*   Automatically generates a [preload link element](https://developer.mozilla.org/en-US/docs/Web/HTML/Link_types/preload) if [rendering on the server](/guide/universal).
+*   Automatically generates a [preload link element](https://developer.mozilla.org/en-US/docs/Web/HTML/Link_types/preload) if [rendering on the server](/guide/ssr).
 
-Angular displays a warning during development if the LCP element is an image that does not have the `priority` attribute. A page’s LCP element can vary based on a number of factors - such as the dimensions of a user's screen, so a page may have multiple images that should be marked `priority`. See [CSS for Web Vitals](https://web.dev/css-web-vitals/#images-and-largest-contentful-paint-lcp) for more details.
+Angular logs an error during development if the LCP element is an image that does not have the `priority` attribute, as this can hurt loading performance significantly. A page’s LCP element can vary based on a number of factors - such as the dimensions of a user's screen, so a page may have multiple images that should be marked `priority`. See [CSS for Web Vitals](https://web.dev/css-web-vitals/#images-and-largest-contentful-paint-lcp) for more details.
 
 #### Step 5: Include Height and Width
 
@@ -77,7 +77,7 @@ In order to prevent [image-related layout shifts](https://web.dev/css-web-vitals
 
 </code-example>
 
-For **responsive images** (images which you've styled to grow and shrink relative to the viewport), the `width` and `height` attributes should be the instrinsic size of the image file. For responsive images it's also important to [set a value for `sizes`.](#responsive-images)
+For **responsive images** (images which you've styled to grow and shrink relative to the viewport), the `width` and `height` attributes should be the intrinsic size of the image file. For responsive images it's also important to [set a value for `sizes`.](#responsive-images)
 
 For **fixed size images**, the `width` and `height` attributes should reflect the desired rendered size of the image. The aspect ratio of these attributes should always match the intrinsic aspect ratio of the image.
 
@@ -95,15 +95,66 @@ When you add the `fill` attribute to your image, you do not need and should not 
 
 </code-example>
 
-You can use the [object-fit](https://developer.mozilla.org/en-US/docs/Web/CSS/object-fit) CSS property to change how the image will fill its container. If you style your image with `object-fit: "contain"`, the image will maintain its aspect ratio and be "letterboxed" to fit the element. If you set `object-fit: "cover"`, the element will retain its aspect ratio, fully fill the element, and some content may be "cropped" off. 
+You can use the [object-fit](https://developer.mozilla.org/en-US/docs/Web/CSS/object-fit) CSS property to change how the image will fill its container. If you style your image with `object-fit: "contain"`, the image will maintain its aspect ratio and be "letterboxed" to fit the element. If you set `object-fit: "cover"`, the element will retain its aspect ratio, fully fill the element, and some content may be "cropped" off.
 
 See visual examples of the above at the [MDN object-fit documentation.](https://developer.mozilla.org/en-US/docs/Web/CSS/object-fit)
 
 You can also style your image with the [object-position property](https://developer.mozilla.org/en-US/docs/Web/CSS/object-position) to adjust its position within its containing element.
 
-**Important note:** For the "fill" image to render properly, its parent element **must** be styled with `position: "relative"`, `position: "fixed"`, or `position: "absolute"`. 
+**Important note:** For the "fill" image to render properly, its parent element **must** be styled with `position: "relative"`, `position: "fixed"`, or `position: "absolute"`.
 
-### Adjusting image styling
+## Using placeholders
+
+### Automatic placeholders
+
+NgOptimizedImage can provide an automatic low-resolution placeholder for your image, as long as you're using a CDN or image host which provides automatic image resizing. To take advantage of this feature, just add the `placeholder` attribute to your image, as so:
+
+<code-example format="typescript" language="typescript">
+
+&lt;img ngSrc="cat.jpg" width="400" height="200" placeholder&gt;
+
+</code-example>
+
+Adding this attribute will automatically request a second, smaller version of the image, using your specified image loader. This small image will be applied as a `background-image` style with a CSS blur while your image loads. If no image loader is provided, no placeholder image can be generated and an error will be thrown.
+
+The default size for generated placeholders is 30px wide, but you can make it larger or smaller by specifying a value in the `IMAGE_CONFIG` provider, as seen below:
+
+<code-example format="typescript" language="typescript">
+providers: [
+  {
+    provide: IMAGE_CONFIG,
+    useValue: {
+      placeholderResolution: 40
+    }
+  },
+],
+</code-example>
+
+If you want sharp edges around your blurred placeholder, you can wrap your image in a containing `<div>` with the `overflow: hidden` style. As long as the `<div>` is the same size as the image (such as by using the `width: fit-content` style), the "fuzzy edges" of the placeholder will be hidden.
+
+### Data URL placeholders
+
+You can also specify a placeholder using a base64 [data URL](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs) without an image loader. The data url format is `data:image/[imagetype];[data]`, where `[imagetype]` is the image format, just as `png`, and `[data]` is a base64 encoding of the image. That encoding can be done using the command line or in JavaScript. For specific commands, see [the MDN documentation](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs#encoding_data_into_base64_format). An example of a data URL placeholder with truncated data is shown below:
+
+<code-example format="typescript" language="typescript">
+
+&lt;img ngSrc="cat.jpg" width="400" height="200" placeholder="data:image/png;base64,iVBORw0K..."&gt;
+
+</code-example>
+
+However, large data URLs  increase the size of your Angular bundles and slow down page load. If you cannot use an image loader, the Angular team recommends keeping base64 placeholder images smaller than 4KB and using them exclusively on critical images. In addition to decreasing placeholder dimensions, consider changing image formats or parameters used when saving images. At very low resolutions, these parameters can have a large effect on file size.
+
+### Non-blurred placeholders
+
+By default, NgOptimizedImage applies a CSS blur effect to image placeholders. To render a placeholder without blur, provide a `placeholderConfig` argument with an object that includes the `blur` property, set to false. For example:
+
+<code-example format="typescript" language="typescript">
+
+&lt;img ngSrc="cat.jpg" width="400" height="200" placeholder [placeholderConfig]="{blur: false}"&gt;
+
+</code-example>
+
+## Adjusting image styling
 
 Depending on the image's styling, adding `width` and `height` attributes may cause the image to render differently. `NgOptimizedImage` warns you if your image styling renders the image at a distorted aspect ratio.
 
@@ -115,9 +166,11 @@ If the `height` and `width` attribute on the image are preventing you from sizin
 
 NgOptimizedImage includes a number of features designed to improve loading performance in your app. These features are described in this section.
 
-### Add resource hints
+### Resource hints
 
-You can add a [`preconnect` resource hint](https://web.dev/preconnect-and-dns-prefetch) for your image origin to ensure that the LCP image loads as quickly as possible. Always put resource hints in the `<head>` of the document.
+A [`preconnect` resource hint](https://web.dev/preconnect-and-dns-prefetch) for your image origin ensures that the LCP image loads as quickly as possible.
+
+Preconnect links are automatically generated for domains provided as an argument to a [loader](#configuring-an-image-loader-for-ngoptimizedimage). If an image origin cannot be automatically identified, and no preconnect link is detected for the LCP image, `NgOptimizedImage` will warn during development. In that case, you should manually add a resource hint to `index.html`. Within the `<head>` of the document, add a `link` tag with `rel="preload"`, as shown below:
 
 <code-example format="html" language="html">
 
@@ -125,15 +178,15 @@ You can add a [`preconnect` resource hint](https://web.dev/preconnect-and-dns-pr
 
 </code-example>
 
-By default, if you use a loader for a third-party image service, the `NgOptimizedImage` directive will warn during development if it detects that there is no `preconnect` resource hint for the origin that serves the LCP image.
-
-To disable these warnings, inject the `PRECONNECT_CHECK_BLOCKLIST` token:
+To disable preconnect warnings, inject the `PRECONNECT_CHECK_BLOCKLIST` token:
 
 <code-example format="typescript" language="typescript">
 
 providers: [
   {provide: PRECONNECT_CHECK_BLOCKLIST, useValue: 'https://your-domain.com'}
 ],
+
+See more information on automatic preconnect generation [here](#why-is-a-preconnect-element-not-being-generated-for-my-image-domain).
 
 </code-example>
 
@@ -143,7 +196,7 @@ Defining a [`srcset` attribute](https://developer.mozilla.org/en-US/docs/Web/API
 
 #### Fixed-size images
 
-If your image should be "fixed" in size  (i.e. the same size across devices, except for [pixel density](https://web.dev/codelab-density-descriptors/)), there is no need to set a `sizes` attribute. A `srcset` can be generated automatically from the image's width and height attributes with no further input required. 
+If your image should be "fixed" in size  (i.e. the same size across devices, except for [pixel density](https://web.dev/codelab-density-descriptors/)), there is no need to set a `sizes` attribute. A `srcset` can be generated automatically from the image's width and height attributes with no further input required.
 
 Example srcset generated: `<img ... srcset="image-400w.jpg 1x, image-800w.jpg 2x">`
 
@@ -242,6 +295,7 @@ Based on the image services commonly used with Angular applications, `NgOptimize
 | Cloudinary | `provideCloudinaryLoader` | [Documentation](https://cloudinary.com/documentation/resizing_and_cropping) |
 | ImageKit | `provideImageKitLoader` | [Documentation](https://docs.imagekit.io/) |
 | Imgix | `provideImgixLoader` | [Documentation](https://docs.imgix.com/) |
+| Netlify | `provideNetlifyLoader` | [Documentation](https://docs.netlify.com/image-cdn/overview/) |
 
 To use the **generic loader** no additional code changes are necessary. This is the default behavior.
 
@@ -284,7 +338,7 @@ Note: even though the `width` property may not always be present, a custom loade
 
 ### The `loaderParams` Property
 
-There is an additional attribute supported by the `NgOptimizedImage` directive, called `loaderParams`, which is specifically designed to support the use of custom loaders. The `loaderParams` attribute take an object with any properties as a value, and does not do anything on its own. The data in `loaderParams` is added to the `ImageLoaderConfig` object passed to your custom loader, and can be used to control the behavior of the loader.
+There is an additional attribute supported by the `NgOptimizedImage` directive, called `loaderParams`, which is specifically designed to support the use of custom loaders. The `loaderParams` attribute takes an object with any properties as a value, and does not do anything on its own. The data in `loaderParams` is added to the `ImageLoaderConfig` object passed to your custom loader, and can be used to control the behavior of the loader.
 
 A common use for `loaderParams` is controlling advanced image CDN features.
 
@@ -330,12 +384,27 @@ Here's a simple step-by-step process for migrating from `background-image` to `N
 You can adjust how the background image fills the container as described in the [Using fill mode](#using-fill-mode) section.
 
 ### Why can't I use `src` with `NgOptimizedImage`?
-The `ngSrc` attribute was chosen as the trigger for NgOptimizedImage due to technical considerations around how images are loaded by the browser. NgOptimizedImage makes programmatic changes to the `loading` attribute--if the browser sees the `src` attribute before those changes are made, it will begin eagerly downloading the image file, and the loading changes will be ignored. 
+The `ngSrc` attribute was chosen as the trigger for NgOptimizedImage due to technical considerations around how images are loaded by the browser. NgOptimizedImage makes programmatic changes to the `loading` attribute--if the browser sees the `src` attribute before those changes are made, it will begin eagerly downloading the image file, and the loading changes will be ignored.
 
 ### Can I use two different image domains in the same page?
 The [image loaders](#configuring-an-image-loader-for-ngoptimizedimage) provider pattern is designed to be as simple as possible for the common use case of having only a single image CDN used within a component. However, it's still very possible to manage multiple image CDNs using a single provider.
 
 To do this, we recommend writing a [custom image loader](#custom-loaders) which uses the [`loaderParams` property](#the-loaderparams-property) to pass a flag that specifies which image CDN should be used, and then invokes the appropriate loader based on that flag.
+
+### Why is a preconnect element not being generated for my image domain?
+Preconnect generation is performed based on static analysis of your application. That means that the image domain must be directly included in the loader parameter, as in the following example:
+
+<code-example format="typescript" language="typescript">
+providers: [
+  provideImgixLoader('https://my.base.url/'),
+],
+</code-example>
+
+If you use a variable to pass the domain string to the loader, or you're not using a loader, the static analysis will not be able to identify the domain, and no preconnect link will be generated. In this case you should manually add a preconnect link to the document head, as [described above.](#resource-hints).
+
+### Can you add a new built-in loader for my preferred CDN?
+
+For maintenance reasons, we don't currently plan to support additional built-in loaders in the Angular repository. Instead, we encourage developers to publish any additional image loaders as third-party packages.
 
 <!-- links -->
 

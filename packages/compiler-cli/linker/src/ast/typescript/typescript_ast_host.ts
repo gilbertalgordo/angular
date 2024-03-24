@@ -40,6 +40,10 @@ export class TypeScriptAstHost implements AstHost<ts.Expression> {
     return str.text;
   }
 
+  isNull(node: ts.Expression): boolean {
+    return node.kind === ts.SyntaxKind.NullKeyword;
+  }
+
   isNumericLiteral = ts.isNumericLiteral;
 
   parseNumericLiteral(num: ts.Expression): number {
@@ -112,6 +116,17 @@ export class TypeScriptAstHost implements AstHost<ts.Expression> {
     }
 
     return stmt.expression;
+  }
+
+  parseParameters(fn: ts.Expression): ts.Expression[] {
+    assert(fn, this.isFunctionExpression, 'a function');
+    return fn.parameters.map(param => {
+      assert(param.name, ts.isIdentifier, 'an identifier');
+      if (param.dotDotDotToken) {
+        throw new FatalLinkerError(fn.body, 'Unsupported syntax, expected an identifier.');
+      }
+      return param.name;
+    });
   }
 
   isCallExpression = ts.isCallExpression;

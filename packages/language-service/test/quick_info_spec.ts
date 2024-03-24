@@ -7,14 +7,14 @@
  */
 
 import {initMockFileSystem} from '@angular/compiler-cli/src/ngtsc/file_system/testing';
-import ts from 'typescript/lib/tsserverlibrary';
+import ts from 'typescript';
 
 import {createModuleAndProjectWithDeclarations, LanguageServiceTestEnv, Project} from '../testing';
 
 function quickInfoSkeleton(): {[fileName: string]: string} {
   return {
     'app.ts': `
-        import {Component, Directive, EventEmitter, Input, NgModule, Output, Pipe, PipeTransform} from '@angular/core';
+        import {Component, Directive, EventEmitter, Input, NgModule, Output, Pipe, PipeTransform, model} from '@angular/core';
         import {CommonModule} from '@angular/common';
 
         export interface Address {
@@ -71,6 +71,14 @@ function quickInfoSkeleton(): {[fileName: string]: string} {
           @Output() modelChange!: EventEmitter<string>;
         }
 
+        @Directive({
+          selector: '[signal-model]',
+          exportAs: 'signalModel',
+        })
+        export class SignalModel {
+          signalModel = model<string>();
+        }
+
         @Directive({selector: 'button[custom-button][compound]'})
         export class CompoundCustomButtonDirective {
           @Input() config?: {color?: string};
@@ -82,6 +90,7 @@ function quickInfoSkeleton(): {[fileName: string]: string} {
             CompoundCustomButtonDirective,
             StringModel,
             TestComponent,
+            SignalModel,
           ],
           imports: [
             CommonModule,
@@ -235,6 +244,15 @@ describe('quick info', () => {
             templateOverride: `<test-comp string-model [(mo¦del)]="title"></test-comp>`,
             expectedSpanText: 'model',
             expectedDisplayString: '(property) StringModel.model: string'
+          });
+        });
+
+        it('should work for signal-based two-way binding providers', () => {
+          expectQuickInfo({
+            templateOverride: `<test-comp signal-model [(signa¦lModel)]="title"></test-comp>`,
+            expectedSpanText: 'signalModel',
+            expectedDisplayString:
+                '(property) SignalModel.signalModel: ModelSignal<string | undefined>'
           });
         });
       });
@@ -519,6 +537,173 @@ describe('quick info', () => {
         const quickInfo = template.getQuickInfoAtPosition();
         const documentation = toText(quickInfo!.documentation);
         expect(documentation).toBe('This is the title of the `AppCmp` Component.');
+      });
+    });
+
+    describe('blocks', () => {
+      describe('defer & friends', () => {
+        it('defer', () => {
+          expectQuickInfo({
+            templateOverride: `@de¦fer { } @placeholder { <input /> }`,
+            expectedSpanText: '@defer ',
+            expectedDisplayString: '(block) @defer'
+          });
+        });
+
+        it('defer with condition', () => {
+          expectQuickInfo({
+            templateOverride: `@de¦fer (on immediate) { } @placeholder { <input /> }`,
+            expectedSpanText: '@defer ',
+            expectedDisplayString: '(block) @defer'
+          });
+        });
+
+        it('placeholder', () => {
+          expectQuickInfo({
+            templateOverride: `@defer { } @pla¦ceholder { <input /> }`,
+            expectedSpanText: '@placeholder ',
+            expectedDisplayString: '(block) @placeholder'
+          });
+        });
+
+        it('loading', () => {
+          expectQuickInfo({
+            templateOverride: `@defer { } @loadin¦g { <input /> }`,
+            expectedSpanText: '@loading ',
+            expectedDisplayString: '(block) @loading'
+          });
+        });
+
+        it('error', () => {
+          expectQuickInfo({
+            templateOverride: `@defer { } @erro¦r { <input /> }`,
+            expectedSpanText: '@error ',
+            expectedDisplayString: '(block) @error'
+          });
+        });
+
+        describe('triggers', () => {
+          it('viewport', () => {
+            expectQuickInfo({
+              templateOverride: `@defer (on vie¦wport(x)) { } <div #x></div>`,
+              expectedSpanText: 'viewport',
+              expectedDisplayString: '(trigger) viewport'
+            });
+          });
+
+          it('immediate', () => {
+            expectQuickInfo({
+              templateOverride: `@defer (on imme¦diate) {}`,
+              expectedSpanText: 'immediate',
+              expectedDisplayString: '(trigger) immediate'
+            });
+          });
+
+          it('idle', () => {
+            expectQuickInfo({
+              templateOverride: `@defer (on i¦dle) { } `,
+              expectedSpanText: 'idle',
+              expectedDisplayString: '(trigger) idle'
+            });
+          });
+
+          it('hover', () => {
+            expectQuickInfo({
+              templateOverride: `@defer (on hov¦er(x)) { } <div #x></div> `,
+              expectedSpanText: 'hover',
+              expectedDisplayString: '(trigger) hover'
+            });
+          });
+
+          it('timer', () => {
+            expectQuickInfo({
+              templateOverride: `@defer (on tim¦er(100)) { } `,
+              expectedSpanText: 'timer',
+              expectedDisplayString: '(trigger) timer'
+            });
+          });
+
+          it('interaction', () => {
+            expectQuickInfo({
+              templateOverride: `@defer (on interactio¦n(x)) { } <div #x></div>`,
+              expectedSpanText: 'interaction',
+              expectedDisplayString: '(trigger) interaction'
+            });
+          });
+
+          it('when', () => {
+            expectQuickInfo({
+              templateOverride: `@defer (whe¦n title) { } <div #x></div>`,
+              expectedSpanText: 'when',
+              expectedDisplayString: '(keyword) when'
+            });
+          });
+
+          it('prefetch (when)', () => {
+            expectQuickInfo({
+              templateOverride: `@defer (prefet¦ch when title) { }`,
+              expectedSpanText: 'prefetch',
+              expectedDisplayString: '(keyword) prefetch'
+            });
+          });
+
+          it('on', () => {
+            expectQuickInfo({
+              templateOverride: `@defer (o¦n immediate) { } `,
+              expectedSpanText: 'on',
+              expectedDisplayString: '(keyword) on'
+            });
+          });
+
+          it('prefetch (on)', () => {
+            expectQuickInfo({
+              templateOverride: `@defer (prefet¦ch on immediate) { }`,
+              expectedSpanText: 'prefetch',
+              expectedDisplayString: '(keyword) prefetch'
+            });
+          });
+        });
+      });
+
+      it('empty', () => {
+        expectQuickInfo({
+          templateOverride: `@for (name of constNames; track $index) {} @em¦pty {}`,
+          expectedSpanText: '@empty ',
+          expectedDisplayString: '(block) @empty'
+        });
+      });
+
+      it('track keyword', () => {
+        expectQuickInfo({
+          templateOverride: `@for (name of constNames; tr¦ack $index) {}`,
+          expectedSpanText: 'track',
+          expectedDisplayString: '(keyword) track'
+        });
+      });
+
+      it('implicit variable assignment', () => {
+        expectQuickInfo({
+          templateOverride: `@for (name of constNames; track $index; let od¦d = $odd) {}`,
+          expectedSpanText: 'odd',
+          expectedDisplayString: '(variable) odd: boolean'
+        });
+      });
+
+      it('implicit variable assignment in comma separated list', () => {
+        expectQuickInfo({
+          templateOverride:
+              `@for (name of constNames; track index; let odd = $odd,  ind¦ex  =   $index) {}`,
+          expectedSpanText: 'index',
+          expectedDisplayString: '(variable) index: number'
+        });
+      });
+
+      it('if block alias variable', () => {
+        expectQuickInfo({
+          templateOverride: `@if (constNames; as al¦iasName) {}`,
+          expectedSpanText: 'aliasName',
+          expectedDisplayString: '(variable) aliasName: [{ readonly name: "name"; }]'
+        });
       });
     });
 

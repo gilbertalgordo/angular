@@ -6,18 +6,20 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {consumerDestroy, getActiveConsumer, setActiveConsumer} from '@angular/core/primitives/signals';
+
+import {NotificationType} from '../change_detection/scheduling/zoneless_scheduling';
 import {hasInSkipHydrationBlockFlag} from '../hydration/skip_hydration';
 import {ViewEncapsulation} from '../metadata/view';
 import {RendererStyleFlags2} from '../render/api_flags';
-import {consumerDestroy} from '../signals';
 import {addToArray, removeFromArray} from '../util/array_utils';
-import {assertDefined, assertEqual, assertFunction, assertNumber, assertString} from '../util/assert';
+import {assertDefined, assertEqual, assertFunction, assertNotReactive, assertNumber, assertString} from '../util/assert';
 import {escapeCommentText} from '../util/dom';
 
 import {assertLContainer, assertLView, assertParentView, assertProjectionSlots, assertTNodeForLView} from './assert';
 import {attachPatchData} from './context_discovery';
 import {icuContainerIterate} from './i18n/i18n_tree_shaking';
-import {CONTAINER_HEADER_OFFSET, HAS_TRANSPLANTED_VIEWS, LContainer, MOVED_VIEWS, NATIVE} from './interfaces/container';
+import {CONTAINER_HEADER_OFFSET, LContainer, LContainerFlags, MOVED_VIEWS, NATIVE} from './interfaces/container';
 import {ComponentDef} from './interfaces/definition';
 import {NodeInjectorFactory} from './interfaces/injector';
 import {unregisterLView} from './interfaces/lview_tracking';
@@ -25,12 +27,11 @@ import {TElementNode, TIcuContainerNode, TNode, TNodeFlags, TNodeType, TProjecti
 import {Renderer} from './interfaces/renderer';
 import {RComment, RElement, RNode, RTemplate, RText} from './interfaces/renderer_dom';
 import {isLContainer, isLView} from './interfaces/type_checks';
-import {CHILD_HEAD, CLEANUP, DECLARATION_COMPONENT_VIEW, DECLARATION_LCONTAINER, DestroyHookData, FLAGS, HookData, HookFn, HOST, LView, LViewFlags, NEXT, ON_DESTROY_HOOKS, PARENT, QUERIES, REACTIVE_HOST_BINDING_CONSUMER, REACTIVE_TEMPLATE_CONSUMER, RENDERER, T_HOST, TVIEW, TView, TViewType} from './interfaces/view';
+import {CHILD_HEAD, CLEANUP, DECLARATION_COMPONENT_VIEW, DECLARATION_LCONTAINER, DestroyHookData, ENVIRONMENT, FLAGS, HookData, HookFn, HOST, LView, LViewFlags, NEXT, ON_DESTROY_HOOKS, PARENT, QUERIES, REACTIVE_TEMPLATE_CONSUMER, RENDERER, T_HOST, TVIEW, TView, TViewType} from './interfaces/view';
 import {assertTNodeType} from './node_assert';
 import {profiler, ProfilerEvent} from './profiler';
 import {setUpAttributes} from './util/attrs_utils';
-import {getLViewParent} from './util/view_traversal_utils';
-import {clearViewRefreshFlag, getNativeByTNode, unwrapRNode} from './util/view_utils';
+import {getLViewParent, getNativeByTNode, unwrapRNode, updateAncestorTraversalFlagsOnAttach} from './util/view_utils';
 
 const enum WalkTNodeTreeAction {
   /** node create in the native environment. Run on initial creation. */
@@ -138,8 +139,7 @@ export function createElementNode(
  * @param lView The view from which elements should be added or removed
  */
 export function removeViewFromDOM(tView: TView, lView: LView): void {
-  const renderer = lView[RENDERER];
-  applyView(tView, lView, renderer, WalkTNodeTreeAction.Detach, null, null);
+  detachViewFromDOM(tView, lView);
   lView[HOST] = null;
   lView[T_HOST] = null;
 }
@@ -174,6 +174,10 @@ export function addViewToDOM(
  * @param lView the `LView` to be detached.
  */
 export function detachViewFromDOM(tView: TView, lView: LView) {
+  // When we remove a view from the DOM, we need to rerun afterRender hooks
+  // We don't necessarily needs to run change detection. DOM removal only requires
+  // change detection if animations are enabled (this notification is handled by animations).
+  lView[ENVIRONMENT].changeDetectionScheduler?.notify(NotificationType.AfterRenderHooks);
   applyView(tView, lView, lView[RENDERER], WalkTNodeTreeAction.Detach, null, null);
 }
 
@@ -274,6 +278,7 @@ export function insertView(tView: TView, lView: LView, lContainer: LContainer, i
     lQueries.insertView(tView);
   }
 
+  updateAncestorTraversalFlagsOnAttach(lView);
   // Sets the attached flag
   lView[FLAGS] |= LViewFlags.Attached;
 }
@@ -296,7 +301,7 @@ function trackMovedView(declarationContainer: LContainer, lView: LView) {
     // At this point the declaration-component is not same as insertion-component; this means that
     // this is a transplanted view. Mark the declared lView as having transplanted views so that
     // those views can participate in CD.
-    declarationContainer[HAS_TRANSPLANTED_VIEWS] = true;
+    declarationContainer[FLAGS] |= LContainerFlags.HasTransplantedViews;
   }
   if (movedViews === null) {
     declarationContainer[MOVED_VIEWS] = [lView];
@@ -313,13 +318,7 @@ function detachMovedView(declarationContainer: LContainer, lView: LView) {
           'A projected view should belong to a non-empty projected views collection');
   const movedViews = declarationContainer[MOVED_VIEWS]!;
   const declarationViewIndex = movedViews.indexOf(lView);
-  const insertionLContainer = lView[PARENT] as LContainer;
-  ngDevMode && assertLContainer(insertionLContainer);
-
-  // If the view was marked for refresh but then detached before it was checked (where the flag
-  // would be cleared and the counter decremented), we need to update the status here.
-  clearViewRefreshFlag(lView);
-
+  ngDevMode && assertLContainer(lView[PARENT]);
   movedViews.splice(declarationViewIndex, 1);
 }
 
@@ -377,9 +376,6 @@ export function destroyLView(tView: TView, lView: LView) {
   if (!(lView[FLAGS] & LViewFlags.Destroyed)) {
     const renderer = lView[RENDERER];
 
-    lView[REACTIVE_TEMPLATE_CONSUMER] && consumerDestroy(lView[REACTIVE_TEMPLATE_CONSUMER]);
-    lView[REACTIVE_HOST_BINDING_CONSUMER] && consumerDestroy(lView[REACTIVE_HOST_BINDING_CONSUMER]);
-
     if (renderer.destroyNode) {
       applyView(tView, lView, renderer, WalkTNodeTreeAction.Destroy, null, null);
     }
@@ -397,7 +393,12 @@ export function destroyLView(tView: TView, lView: LView) {
  * @param lView The LView to clean up
  */
 function cleanUpView(tView: TView, lView: LView): void {
-  if (!(lView[FLAGS] & LViewFlags.Destroyed)) {
+  if (lView[FLAGS] & LViewFlags.Destroyed) {
+    return;
+  }
+
+  const prevConsumer = setActiveConsumer(null);
+  try {
     // Usually the Attached flag is removed when the view is detached from its parent, however
     // if it's a root view, the flag won't be unset hence why we're also removing on destroy.
     lView[FLAGS] &= ~LViewFlags.Attached;
@@ -408,6 +409,8 @@ function cleanUpView(tView: TView, lView: LView): void {
     // This also aligns with the ViewEngine behavior. It also means that the onDestroy hook is
     // really more of an "afterDestroy" hook if you think about it.
     lView[FLAGS] |= LViewFlags.Destroyed;
+
+    lView[REACTIVE_TEMPLATE_CONSUMER] && consumerDestroy(lView[REACTIVE_TEMPLATE_CONSUMER]);
 
     executeOnDestroys(tView, lView);
     processCleanups(tView, lView);
@@ -434,11 +437,14 @@ function cleanUpView(tView: TView, lView: LView): void {
 
     // Unregister the view once everything else has been cleaned up.
     unregisterLView(lView);
+  } finally {
+    setActiveConsumer(prevConsumer);
   }
 }
 
 /** Removes listeners and unsubscribes from output subscriptions */
 function processCleanups(tView: TView, lView: LView): void {
+  ngDevMode && assertNotReactive(processCleanups.name);
   const tCleanup = tView.cleanup;
   const lCleanup = lView[CLEANUP]!;
   if (tCleanup !== null) {
@@ -449,7 +455,7 @@ function processCleanups(tView: TView, lView: LView): void {
         const targetIdx = tCleanup[i + 3];
         ngDevMode && assertNumber(targetIdx, 'cleanup target must be a number');
         if (targetIdx >= 0) {
-          // unregister
+          // Destroy anything whose teardown is a function call (e.g. QueryList, ModelSignal).
           lCleanup[targetIdx]();
         } else {
           // Subscription
@@ -481,6 +487,7 @@ function processCleanups(tView: TView, lView: LView): void {
 
 /** Calls onDestroy hooks for this view */
 function executeOnDestroys(tView: TView, lView: LView): void {
+  ngDevMode && assertNotReactive(executeOnDestroys.name);
   let destroyHooks: DestroyHookData|null;
 
   if (tView != null && (destroyHooks = tView.destroyHooks) != null) {
@@ -959,7 +966,7 @@ function applyProjectionRecursive(
     // This should not exist, it is a bit of a hack. When we bootstrap a top level node and we
     // need to support passing projectable nodes, so we cheat and put them in the TNode
     // of the Host TView. (Yes we put instance info at the T Level). We can get away with it
-    // because we know that that TView is not shared and therefore it will not be a problem.
+    // because we know that TView is not shared and therefore it will not be a problem.
     // This should be refactored and cleaned up.
     for (let i = 0; i < nodeToProjectOrRNodes.length; i++) {
       const rNode = nodeToProjectOrRNodes[i];

@@ -1,7 +1,7 @@
 # Background processing using web workers
 
 [Web workers](https://developer.mozilla.org/docs/Web/API/Web_Workers_API) lets you run CPU-intensive computations in a background thread, freeing the main thread to update the user interface.
-Application's performing a lot of computations, like generating Computer-Aided Design \(CAD\) drawings or doing heavy geometric calculations, can use web workers to increase performance.
+Applications performing a lot of computations, like generating Computer-Aided Design \(CAD\) drawings or doing heavy geometric calculations, can use web workers to increase performance.
 
 <div class="alert is-helpful">
 
@@ -64,7 +64,7 @@ After you create this initial scaffold, you must refactor your code to use the w
 
 <div class="alert is-important">
 
-Some environments or platforms, such as `@angular/platform-server` used in [Server-side Rendering](guide/universal), don't support web workers.
+Some environments or platforms, such as `@angular/platform-server` used in [Server-side Rendering](guide/ssr), don't support web workers.
 To ensure that your application works in these environments, you must provide a fallback mechanism to perform the computations that the worker would otherwise perform.
 
 </div>

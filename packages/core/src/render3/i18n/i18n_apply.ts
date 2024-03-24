@@ -18,7 +18,7 @@ import {RElement, RNode, RText} from '../interfaces/renderer_dom';
 import {SanitizerFn} from '../interfaces/sanitization';
 import {HEADER_OFFSET, LView, RENDERER, TView} from '../interfaces/view';
 import {createCommentNode, createElementNode, createTextNode, nativeInsertBefore, nativeParentNode, nativeRemoveNode, updateTextNode} from '../node_manipulation';
-import {getBindingIndex} from '../state';
+import {getBindingIndex, lastNodeWasCreated, wasLastNodeCreated} from '../state';
 import {renderStringify} from '../util/stringify_utils';
 import {getNativeByIndex, unwrapRNode} from '../util/view_utils';
 
@@ -78,6 +78,39 @@ export function applyI18n(tView: TView, lView: LView, index: number) {
   changeMaskCounter = 0;
 }
 
+function createNodeWithoutHydration(
+    lView: LView, textOrName: string,
+    nodeType: typeof Node.COMMENT_NODE|typeof Node.TEXT_NODE|typeof Node.ELEMENT_NODE) {
+  const renderer = lView[RENDERER];
+
+  switch (nodeType) {
+    case Node.COMMENT_NODE:
+      return createCommentNode(renderer, textOrName);
+
+    case Node.TEXT_NODE:
+      return createTextNode(renderer, textOrName);
+
+    case Node.ELEMENT_NODE:
+      return createElementNode(renderer, textOrName, null);
+  }
+}
+
+let _locateOrCreateNode: typeof locateOrCreateNodeImpl = (lView, index, textOrName, nodeType) => {
+  lastNodeWasCreated(true);
+  return createNodeWithoutHydration(lView, textOrName, nodeType);
+};
+
+function locateOrCreateNodeImpl(
+    lView: LView, index: number, textOrName: string,
+    nodeType: typeof Node.COMMENT_NODE|typeof Node.TEXT_NODE|typeof Node.ELEMENT_NODE) {
+  // TODO: Add support for hydration
+  lastNodeWasCreated(true);
+  return createNodeWithoutHydration(lView, textOrName, nodeType);
+}
+
+export function enableLocateOrCreateI18nNodeImpl() {
+  _locateOrCreateNode = locateOrCreateNodeImpl;
+}
 
 /**
  * Apply `I18nCreateOpCodes` op-codes as stored in `TI18n.create`.
@@ -102,13 +135,15 @@ export function applyCreateOpCodes(
         (opCode & I18nCreateOpCode.APPEND_EAGERLY) === I18nCreateOpCode.APPEND_EAGERLY;
     const index = opCode >>> I18nCreateOpCode.SHIFT;
     let rNode = lView[index];
+    let lastNodeWasCreated = false;
     if (rNode === null) {
       // We only create new DOM nodes if they don't already exist: If ICU switches case back to a
       // case which was already instantiated, no need to create new DOM nodes.
       rNode = lView[index] =
-          isComment ? renderer.createComment(text) : createTextNode(renderer, text);
+          _locateOrCreateNode(lView, index, text, isComment ? Node.COMMENT_NODE : Node.TEXT_NODE);
+      lastNodeWasCreated = wasLastNodeCreated();
     }
-    if (appendNow && parentRNode !== null) {
+    if (appendNow && parentRNode !== null && lastNodeWasCreated) {
       nativeInsertBefore(renderer, parentRNode, rNode, insertInFrontOf, false);
     }
   }
@@ -141,7 +176,7 @@ export function applyMutableOpCodes(
       if (lView[textNodeIndex] === null) {
         ngDevMode && ngDevMode.rendererCreateTextNode++;
         ngDevMode && assertIndexInRange(lView, textNodeIndex);
-        lView[textNodeIndex] = createTextNode(renderer, opCode);
+        lView[textNodeIndex] = _locateOrCreateNode(lView, textNodeIndex, opCode, Node.TEXT_NODE);
       }
     } else if (typeof opCode == 'number') {
       switch (opCode & IcuCreateOpCode.MASK_INSTRUCTION) {
@@ -219,7 +254,7 @@ export function applyMutableOpCodes(
             ngDevMode && ngDevMode.rendererCreateComment++;
             ngDevMode && assertIndexInExpandoRange(lView, commentNodeIndex);
             const commentRNode = lView[commentNodeIndex] =
-                createCommentNode(renderer, commentValue);
+                _locateOrCreateNode(lView, commentNodeIndex, commentValue, Node.COMMENT_NODE);
             // FIXME(misko): Attaching patch data is only needed for the root (Also add tests)
             attachPatchData(commentRNode, lView);
           }
@@ -236,7 +271,7 @@ export function applyMutableOpCodes(
             ngDevMode && ngDevMode.rendererCreateElement++;
             ngDevMode && assertIndexInExpandoRange(lView, elementNodeIndex);
             const elementRNode = lView[elementNodeIndex] =
-                createElementNode(renderer, tagName, null);
+                _locateOrCreateNode(lView, elementNodeIndex, tagName, Node.ELEMENT_NODE);
             // FIXME(misko): Attaching patch data is only needed for the root (Also add tests)
             attachPatchData(elementRNode, lView);
           }

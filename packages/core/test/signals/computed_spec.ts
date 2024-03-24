@@ -6,7 +6,8 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {computed, signal, watch} from '@angular/core/src/signals';
+import {computed, signal} from '@angular/core';
+import {createWatch} from '@angular/core/primitives/signals';
 
 describe('computed', () => {
   it('should create computed', () => {
@@ -138,7 +139,7 @@ describe('computed', () => {
     const derived = computed(() => source().toUpperCase());
 
     let watchCount = 0;
-    const w = watch(
+    const w = createWatch(
         () => {
           derived();
         },
@@ -184,5 +185,11 @@ describe('computed', () => {
     });
 
     expect(illegal).toThrow();
+  });
+
+  it('should have a toString implementation', () => {
+    const counter = signal(1);
+    const double = computed(() => counter() * 2);
+    expect(double + '').toBe('[Computed: 2]');
   });
 });

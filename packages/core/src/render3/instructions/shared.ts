@@ -6,6 +6,8 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {setActiveConsumer} from '@angular/core/primitives/signals';
+
 import {Injector} from '../../di/injector';
 import {ErrorHandler} from '../../error_handler';
 import {RuntimeError, RuntimeErrorCode} from '../../errors';
@@ -18,31 +20,33 @@ import {Writable} from '../../interface/type';
 import {SchemaMetadata} from '../../metadata/schema';
 import {ViewEncapsulation} from '../../metadata/view';
 import {validateAgainstEventAttributes, validateAgainstEventProperties} from '../../sanitization/sanitization';
-import {consumerAfterComputation, consumerBeforeComputation, setActiveConsumer} from '../../signals';
 import {assertDefined, assertEqual, assertGreaterThan, assertGreaterThanOrEqual, assertIndexInRange, assertNotEqual, assertNotSame, assertSame, assertString} from '../../util/assert';
 import {escapeCommentText} from '../../util/dom';
 import {normalizeDebugBindingName, normalizeDebugBindingValue} from '../../util/ng_reflect';
 import {stringify} from '../../util/stringify';
-import {assertFirstCreatePass, assertFirstUpdatePass, assertLView, assertTNodeForLView, assertTNodeForTView} from '../assert';
+import {applyValueToInputField} from '../apply_value_input_field';
+import {assertFirstCreatePass, assertFirstUpdatePass, assertLView, assertNoDuplicateDirectives, assertTNodeForLView, assertTNodeForTView} from '../assert';
 import {attachPatchData} from '../context_discovery';
 import {getFactoryDef} from '../definition_factory';
 import {diPublicInInjector, getNodeInjectable, getOrCreateNodeInjectorForNode} from '../di';
 import {throwMultipleComponentError} from '../errors';
+import {AttributeMarker} from '../interfaces/attribute_marker';
 import {CONTAINER_HEADER_OFFSET, LContainer} from '../interfaces/container';
 import {ComponentDef, ComponentTemplate, DirectiveDef, DirectiveDefListOrFactory, HostBindingsFunction, HostDirectiveBindingMap, HostDirectiveDefs, PipeDefListOrFactory, RenderFlags, ViewQueriesFunction} from '../interfaces/definition';
 import {NodeInjectorFactory} from '../interfaces/injector';
+import {InputFlags} from '../interfaces/input_flags';
 import {getUniqueLViewId} from '../interfaces/lview_tracking';
-import {AttributeMarker, InitialInputData, InitialInputs, LocalRefExtractor, PropertyAliases, PropertyAliasValue, TAttributes, TConstantsOrFactory, TContainerNode, TDirectiveHostNode, TElementContainerNode, TElementNode, TIcuContainerNode, TNode, TNodeFlags, TNodeType, TProjectionNode} from '../interfaces/node';
+import {InitialInputData, InitialInputs, LocalRefExtractor, NodeInputBindings, NodeOutputBindings, TAttributes, TConstantsOrFactory, TContainerNode, TDirectiveHostNode, TElementContainerNode, TElementNode, TIcuContainerNode, TNode, TNodeFlags, TNodeType, TProjectionNode} from '../interfaces/node';
 import {Renderer} from '../interfaces/renderer';
 import {RComment, RElement, RNode, RText} from '../interfaces/renderer_dom';
 import {SanitizerFn} from '../interfaces/sanitization';
+import {TStylingRange} from '../interfaces/styling';
 import {isComponentDef, isComponentHost, isContentQueryHost} from '../interfaces/type_checks';
-import {CHILD_HEAD, CHILD_TAIL, CLEANUP, CONTEXT, DECLARATION_COMPONENT_VIEW, DECLARATION_VIEW, EMBEDDED_VIEW_INJECTOR, ENVIRONMENT, FLAGS, HEADER_OFFSET, HOST, HostBindingOpCodes, HYDRATION, ID, INJECTOR, LView, LViewEnvironment, LViewFlags, NEXT, PARENT, REACTIVE_HOST_BINDING_CONSUMER, REACTIVE_TEMPLATE_CONSUMER, RENDERER, T_HOST, TData, TVIEW, TView, TViewType} from '../interfaces/view';
+import {CHILD_HEAD, CHILD_TAIL, CLEANUP, CONTEXT, DECLARATION_COMPONENT_VIEW, DECLARATION_VIEW, EMBEDDED_VIEW_INJECTOR, ENVIRONMENT, FLAGS, HEADER_OFFSET, HOST, HostBindingOpCodes, HYDRATION, ID, INJECTOR, LView, LViewEnvironment, LViewFlags, NEXT, PARENT, RENDERER, T_HOST, TData, TVIEW, TView, TViewType} from '../interfaces/view';
 import {assertPureTNodeType, assertTNodeType} from '../node_assert';
 import {clearElementContents, updateTextNode} from '../node_manipulation';
 import {isInlineTemplate, isNodeMatchingSelectorList} from '../node_selector_matcher';
 import {profiler, ProfilerEvent} from '../profiler';
-import {commitLViewConsumerIfHasProducers, getReactiveLViewConsumer} from '../reactive_lview_consumer';
 import {getBindingsEnabled, getCurrentDirectiveIndex, getCurrentParentTNode, getCurrentTNodePlaceholderOk, getSelectedIndex, isCurrentTNodeParent, isInCheckNoChangesMode, isInI18nBlock, isInSkipHydrationBlock, setBindingRootForHostBindings, setCurrentDirectiveIndex, setCurrentQueryIndex, setCurrentTNode, setSelectedIndex} from '../state';
 import {NO_CHANGE} from '../tokens';
 import {mergeHostAttrs} from '../util/attrs_utils';
@@ -53,6 +57,7 @@ import {getComponentLViewByIndex, getNativeByIndex, getNativeByTNode, resetPreOr
 import {selectIndexInternal} from './advance';
 import {ɵɵdirectiveInject} from './di';
 import {handleUnknownPropertyError, isPropertyValid, matchingSchemas} from './element_validation';
+import {writeToDirectiveInput} from './write_to_directive_input';
 
 /**
  * Invoke `HostBindingsFunction`s for view.
@@ -66,7 +71,6 @@ import {handleUnknownPropertyError, isPropertyValid, matchingSchemas} from './el
 export function processHostBindingOpCodes(tView: TView, lView: LView): void {
   const hostBindingOpCodes = tView.hostBindingOpCodes;
   if (hostBindingOpCodes === null) return;
-  const consumer = getReactiveLViewConsumer(lView, REACTIVE_HOST_BINDING_CONSUMER);
   try {
     for (let i = 0; i < hostBindingOpCodes.length; i++) {
       const opCode = hostBindingOpCodes[i] as number;
@@ -79,20 +83,11 @@ export function processHostBindingOpCodes(tView: TView, lView: LView): void {
         const bindingRootIndx = hostBindingOpCodes[++i] as number;
         const hostBindingFn = hostBindingOpCodes[++i] as HostBindingsFunction<any>;
         setBindingRootForHostBindings(bindingRootIndx, directiveIdx);
-        consumer.dirty = false;
-        const prevConsumer = consumerBeforeComputation(consumer);
-        try {
-          const context = lView[directiveIdx];
-          hostBindingFn(RenderFlags.Update, context);
-        } finally {
-          consumerAfterComputation(consumer, prevConsumer);
-        }
+        const context = lView[directiveIdx];
+        hostBindingFn(RenderFlags.Update, context);
       }
     }
   } finally {
-    if (lView[REACTIVE_HOST_BINDING_CONSUMER] === null) {
-      commitLViewConsumerIfHasProducers(lView, REACTIVE_HOST_BINDING_CONSUMER);
-    }
     setSelectedIndex(-1);
   }
 }
@@ -104,7 +99,8 @@ export function createLView<T>(
     hydrationInfo: DehydratedView|null): LView<T> {
   const lView = tView.blueprint.slice() as LView;
   lView[HOST] = host;
-  lView[FLAGS] = flags | LViewFlags.CreationMode | LViewFlags.Attached | LViewFlags.FirstLViewPass;
+  lView[FLAGS] = flags | LViewFlags.CreationMode | LViewFlags.Attached | LViewFlags.FirstLViewPass |
+      LViewFlags.Dirty;
   if (embeddedViewInjector !== null ||
       (parentLView && (parentLView[FLAGS] & LViewFlags.HasEmbeddedViewInjector))) {
     lView[FLAGS] |= LViewFlags.HasEmbeddedViewInjector;
@@ -255,7 +251,6 @@ export function allocExpando(
 
 export function executeTemplate<T>(
     tView: TView, lView: LView<T>, templateFn: ComponentTemplate<T>, rf: RenderFlags, context: T) {
-  const consumer = getReactiveLViewConsumer(lView, REACTIVE_TEMPLATE_CONSUMER);
   const prevSelectedIndex = getSelectedIndex();
   const isUpdatePhase = rf & RenderFlags.Update;
   try {
@@ -269,20 +264,8 @@ export function executeTemplate<T>(
     const preHookType =
         isUpdatePhase ? ProfilerEvent.TemplateUpdateStart : ProfilerEvent.TemplateCreateStart;
     profiler(preHookType, context as unknown as {});
-    const effectiveConsumer = isUpdatePhase ? consumer : null;
-    const prevConsumer = consumerBeforeComputation(effectiveConsumer);
-    try {
-      if (effectiveConsumer !== null) {
-        effectiveConsumer.dirty = false;
-      }
-      templateFn(rf, context);
-    } finally {
-      consumerAfterComputation(effectiveConsumer, prevConsumer);
-    }
+    templateFn(rf, context);
   } finally {
-    if (isUpdatePhase && lView[REACTIVE_TEMPLATE_CONSUMER] === null) {
-      commitLViewConsumerIfHasProducers(lView, REACTIVE_TEMPLATE_CONSUMER);
-    }
     setSelectedIndex(prevSelectedIndex);
 
     const postHookType =
@@ -304,7 +287,11 @@ export function executeContentQueries(tView: TView, tNode: TNode, lView: LView) 
       for (let directiveIndex = start; directiveIndex < end; directiveIndex++) {
         const def = tView.data[directiveIndex] as DirectiveDef<any>;
         if (def.contentQueries) {
-          def.contentQueries(RenderFlags.Create, lView[directiveIndex], directiveIndex);
+          const directiveInstance = lView[directiveIndex];
+          ngDevMode &&
+              assertDefined(
+                  directiveIndex, 'Incorrect reference to a directive defining a content query');
+          def.contentQueries(RenderFlags.Create, directiveInstance, directiveIndex);
         }
       }
     } finally {
@@ -493,8 +480,7 @@ export function applyRootElementTransform(rootElement: HTMLElement) {
  *
  * @param rootElement the app root HTML Element
  */
-let _applyRootElementTransformImpl: typeof applyRootElementTransformImpl =
-    (rootElement: HTMLElement) => null;
+let _applyRootElementTransformImpl: typeof applyRootElementTransformImpl = () => null;
 
 /**
  * Processes text node markers before hydration begins. This replaces any special comment
@@ -627,8 +613,8 @@ export function createTNode(
     classes: null,
     classesWithoutHost: null,
     residualClasses: undefined,
-    classBindings: 0 as any,
-    styleBindings: 0 as any,
+    classBindings: 0 as TStylingRange,
+    styleBindings: 0 as TStylingRange,
   };
   if (ngDevMode) {
     // For performance reasons it is important that the tNode retains the same shape during runtime.
@@ -639,48 +625,114 @@ export function createTNode(
   return tNode;
 }
 
+/** Mode for capturing node bindings. */
+const enum CaptureNodeBindingMode {
+  Inputs,
+  Outputs,
+}
+
 /**
- * Generates the `PropertyAliases` data structure from the provided input/output mapping.
- * @param aliasMap Input/output mapping from the directive definition.
- * @param directiveIndex Index of the directive.
- * @param propertyAliases Object in which to store the results.
- * @param hostDirectiveAliasMap Object used to alias or filter out properties for host directives.
+ * Captures node input bindings for the given directive based on the inputs metadata.
+ * This will be called multiple times to combine inputs from various directives on a node.
+ *
+ * The host binding alias map is used to alias and filter out properties for host directives.
  * If the mapping is provided, it'll act as an allowlist, as well as a mapping of what public
  * name inputs/outputs should be exposed under.
  */
-function generatePropertyAliases(
-    aliasMap: {[publicName: string]: string}, directiveIndex: number,
-    propertyAliases: PropertyAliases|null,
-    hostDirectiveAliasMap: HostDirectiveBindingMap|null): PropertyAliases|null {
-  for (let publicName in aliasMap) {
-    if (aliasMap.hasOwnProperty(publicName)) {
-      propertyAliases = propertyAliases === null ? {} : propertyAliases;
-      const internalName = aliasMap[publicName];
+function captureNodeBindings<T>(
+    mode: CaptureNodeBindingMode.Inputs, inputs: DirectiveDef<T>['inputs'], directiveIndex: number,
+    bindingsResult: NodeInputBindings|null,
+    hostDirectiveAliasMap: HostDirectiveBindingMap|null): NodeInputBindings|null;
+/**
+ * Captures node output bindings for the given directive based on the output metadata.
+ * This will be called multiple times to combine inputs from various directives on a node.
+ *
+ * The host binding alias map is used to alias and filter out properties for host directives.
+ * If the mapping is provided, it'll act as an allowlist, as well as a mapping of what public
+ * name inputs/outputs should be exposed under.
+ */
+function captureNodeBindings<T>(
+    mode: CaptureNodeBindingMode.Outputs, outputs: DirectiveDef<T>['outputs'],
+    directiveIndex: number, bindingsResult: NodeOutputBindings|null,
+    hostDirectiveAliasMap: HostDirectiveBindingMap|null): NodeOutputBindings|null;
 
-      // If there are no host directive mappings, we want to remap using the alias map from the
-      // definition itself. If there is an alias map, it has two functions:
-      // 1. It serves as an allowlist of bindings that are exposed by the host directives. Only the
-      // ones inside the host directive map will be exposed on the host.
-      // 2. The public name of the property is aliased using the host directive alias map, rather
-      // than the alias map from the definition.
-      if (hostDirectiveAliasMap === null) {
-        addPropertyAlias(propertyAliases, directiveIndex, publicName, internalName);
-      } else if (hostDirectiveAliasMap.hasOwnProperty(publicName)) {
-        addPropertyAlias(
-            propertyAliases, directiveIndex, hostDirectiveAliasMap[publicName], internalName);
+function captureNodeBindings<T>(
+    mode: CaptureNodeBindingMode, aliasMap: DirectiveDef<T>['inputs']|DirectiveDef<T>['outputs'],
+    directiveIndex: number, bindingsResult: NodeInputBindings|NodeOutputBindings|null,
+    hostDirectiveAliasMap: HostDirectiveBindingMap|null): NodeInputBindings|NodeOutputBindings|
+    null {
+  for (let publicName in aliasMap) {
+    if (!aliasMap.hasOwnProperty(publicName)) {
+      continue;
+    }
+
+    const value = aliasMap[publicName];
+    if (value === undefined) {
+      continue;
+    }
+
+    bindingsResult ??= {};
+
+    let internalName: string;
+    let inputFlags = InputFlags.None;
+
+    // For inputs, the value might be an array capturing additional
+    // input flags.
+    if (Array.isArray(value)) {
+      internalName = value[0];
+      inputFlags = value[1];
+    } else {
+      internalName = value;
+    }
+
+    // If there are no host directive mappings, we want to remap using the alias map from the
+    // definition itself. If there is an alias map, it has two functions:
+    // 1. It serves as an allowlist of bindings that are exposed by the host directives. Only the
+    // ones inside the host directive map will be exposed on the host.
+    // 2. The public name of the property is aliased using the host directive alias map, rather
+    // than the alias map from the definition.
+    let finalPublicName: string = publicName;
+    if (hostDirectiveAliasMap !== null) {
+      // If there is no mapping, it's not part of the allowlist and this input/output
+      // is not captured and should be ignored.
+      if (!hostDirectiveAliasMap.hasOwnProperty(publicName)) {
+        continue;
       }
+      finalPublicName = hostDirectiveAliasMap[publicName];
+    }
+
+    if (mode === CaptureNodeBindingMode.Inputs) {
+      addPropertyBinding(
+          bindingsResult as NodeInputBindings, directiveIndex, finalPublicName, internalName,
+          inputFlags);
+    } else {
+      addPropertyBinding(
+          bindingsResult as NodeOutputBindings, directiveIndex, finalPublicName, internalName);
     }
   }
-  return propertyAliases;
+  return bindingsResult;
 }
 
-function addPropertyAlias(
-    propertyAliases: PropertyAliases, directiveIndex: number, publicName: string,
-    internalName: string) {
-  if (propertyAliases.hasOwnProperty(publicName)) {
-    propertyAliases[publicName].push(directiveIndex, internalName);
+function addPropertyBinding(
+    bindings: NodeInputBindings, directiveIndex: number, publicName: string, internalName: string,
+    inputFlags: InputFlags): void;
+function addPropertyBinding(
+    bindings: NodeOutputBindings, directiveIndex: number, publicName: string,
+    internalName: string): void;
+
+function addPropertyBinding(
+    bindings: NodeInputBindings|NodeOutputBindings, directiveIndex: number, publicName: string,
+    internalName: string, inputFlags?: InputFlags) {
+  let values: (typeof bindings[typeof publicName]);
+
+  if (bindings.hasOwnProperty(publicName)) {
+    (values = bindings[publicName]).push(directiveIndex, internalName);
   } else {
-    propertyAliases[publicName] = [directiveIndex, internalName];
+    values = bindings[publicName] = [directiveIndex, internalName];
+  }
+
+  if (inputFlags !== undefined) {
+    (values as NodeInputBindings[typeof publicName]).push(inputFlags);
   }
 }
 
@@ -698,8 +750,8 @@ function initializeInputAndOutputAliases(
 
   const tNodeAttrs = tNode.attrs;
   const inputsFromAttrs: InitialInputData = [];
-  let inputsStore: PropertyAliases|null = null;
-  let outputsStore: PropertyAliases|null = null;
+  let inputsStore: NodeInputBindings|null = null;
+  let outputsStore: NodeOutputBindings|null = null;
 
   for (let directiveIndex = start; directiveIndex < end; directiveIndex++) {
     const directiveDef = tViewData[directiveIndex] as DirectiveDef<any>;
@@ -708,10 +760,12 @@ function initializeInputAndOutputAliases(
     const aliasedInputs = aliasData ? aliasData.inputs : null;
     const aliasedOutputs = aliasData ? aliasData.outputs : null;
 
-    inputsStore =
-        generatePropertyAliases(directiveDef.inputs, directiveIndex, inputsStore, aliasedInputs);
-    outputsStore =
-        generatePropertyAliases(directiveDef.outputs, directiveIndex, outputsStore, aliasedOutputs);
+    inputsStore = captureNodeBindings(
+        CaptureNodeBindingMode.Inputs, directiveDef.inputs, directiveIndex, inputsStore,
+        aliasedInputs);
+    outputsStore = captureNodeBindings(
+        CaptureNodeBindingMode.Outputs, directiveDef.outputs, directiveIndex, outputsStore,
+        aliasedOutputs);
     // Do not use unbound attributes as inputs to structural directives, since structural
     // directive inputs can only be set using microsyntax (e.g. `<div *dir="exp">`).
     // TODO(FW-1930): microsyntax expressions may also contain unbound/static attributes, which
@@ -763,7 +817,7 @@ export function elementPropertyInternal<T>(
   ngDevMode && assertNotSame(value, NO_CHANGE as any, 'Incoming value should never be NO_CHANGE.');
   const element = getNativeByTNode(tNode, lView) as RElement | RComment;
   let inputData = tNode.inputs;
-  let dataValue: PropertyAliasValue|undefined;
+  let dataValue: NodeInputBindings[typeof propName]|undefined;
   if (!nativeOnly && inputData != null && (dataValue = inputData[propName])) {
     setInputsForProperty(tView, lView, dataValue, propName, value);
     if (isComponentHost(tNode)) markDirtyIfOnPush(lView, tNode.index);
@@ -822,7 +876,7 @@ function setNgReflectProperty(
 }
 
 export function setNgReflectProperties(
-    lView: LView, element: RElement|RComment, type: TNodeType, dataValue: PropertyAliasValue,
+    lView: LView, element: RElement|RComment, type: TNodeType, dataValue: NodeInputBindings[string],
     value: any) {
   if (type & (TNodeType.AnyRNode | TNodeType.Container)) {
     /**
@@ -833,7 +887,7 @@ export function setNgReflectProperties(
      * e.g. [0, 'change', 'change-minified']
      * we want to set the reflected property with the privateName: dataValue[i+1]
      */
-    for (let i = 0; i < dataValue.length; i += 2) {
+    for (let i = 0; i < dataValue.length; i += 3) {
       setNgReflectProperty(lView, element, type, dataValue[i + 1] as string, value);
     }
   }
@@ -1130,6 +1184,7 @@ function findDirectiveDefMatches(
       }
     }
   }
+  ngDevMode && matches !== null && assertNoDuplicateDirectives(matches);
   return matches === null ? null : [matches, hostDirectiveDefs];
 }
 
@@ -1300,35 +1355,18 @@ function setInputsFromAttrs<T>(
   const initialInputs: InitialInputs|null = initialInputData![directiveIndex];
   if (initialInputs !== null) {
     for (let i = 0; i < initialInputs.length;) {
-      const publicName = initialInputs[i++];
-      const privateName = initialInputs[i++];
-      const value = initialInputs[i++];
+      const publicName = initialInputs[i++] as string;
+      const privateName = initialInputs[i++] as string;
+      const flags = initialInputs[i++] as InputFlags;
+      const value = initialInputs[i++] as string;
 
-      writeToDirectiveInput<T>(def, instance, publicName, privateName, value);
+      writeToDirectiveInput<T>(def, instance, publicName, privateName, flags, value);
 
       if (ngDevMode) {
         const nativeElement = getNativeByTNode(tNode, lView) as RElement;
         setNgReflectProperty(lView, nativeElement, tNode.type, privateName, value);
       }
     }
-  }
-}
-
-function writeToDirectiveInput<T>(
-    def: DirectiveDef<T>, instance: T, publicName: string, privateName: string, value: string) {
-  const prevConsumer = setActiveConsumer(null);
-  try {
-    const inputTransforms = def.inputTransforms;
-    if (inputTransforms !== null && inputTransforms.hasOwnProperty(privateName)) {
-      value = inputTransforms[privateName].call(instance, value);
-    }
-    if (def.setInput !== null) {
-      def.setInput(instance, value, publicName, privateName);
-    } else {
-      (instance as any)[privateName] = value;
-    }
-  } finally {
-    setActiveConsumer(prevConsumer);
   }
 }
 
@@ -1348,7 +1386,7 @@ function writeToDirectiveInput<T>(
  * @param attrs Static attrs on this node.
  */
 function generateInitialInputs(
-    inputs: PropertyAliases, directiveIndex: number, attrs: TAttributes): InitialInputs|null {
+    inputs: NodeInputBindings, directiveIndex: number, attrs: TAttributes): InitialInputs|null {
   let inputsToStore: InitialInputs|null = null;
   let i = 0;
   while (i < attrs.length) {
@@ -1373,10 +1411,11 @@ function generateInitialInputs(
       // through the directive def, but we want to do it using the inputs store so that it can
       // account for host directive aliases.
       const inputConfig = inputs[attrName as string];
-      for (let j = 0; j < inputConfig.length; j += 2) {
+      for (let j = 0; j < inputConfig.length; j += 3) {
         if (inputConfig[j] === directiveIndex) {
           inputsToStore.push(
-              attrName as string, inputConfig[j + 1] as string, attrs[i + 1] as string);
+              attrName as string, inputConfig[j + 1] as string, inputConfig[j + 2] as InputFlags,
+              attrs[i + 1] as string);
           // A directive can't have multiple inputs with the same name so we can break here.
           break;
         }
@@ -1409,15 +1448,14 @@ export function createLContainer(
   const lContainer: LContainer = [
     hostNative,   // host native
     true,         // Boolean `true` in this position signifies that this is an `LContainer`
-    false,        // has transplanted views
+    0,            // flags
     currentView,  // parent
     null,         // next
-    0,            // transplanted views to refresh count
     tNode,        // t_host
+    null,         // dehydrated views
     native,       // native,
     null,         // view refs
     null,         // moved views
-    null,         // dehydrated views
   ];
   ngDevMode &&
       assertEqual(
@@ -1430,17 +1468,23 @@ export function createLContainer(
 export function refreshContentQueries(tView: TView, lView: LView): void {
   const contentQueries = tView.contentQueries;
   if (contentQueries !== null) {
-    for (let i = 0; i < contentQueries.length; i += 2) {
-      const queryStartIdx = contentQueries[i];
-      const directiveDefIdx = contentQueries[i + 1];
-      if (directiveDefIdx !== -1) {
-        const directiveDef = tView.data[directiveDefIdx] as DirectiveDef<any>;
-        ngDevMode && assertDefined(directiveDef, 'DirectiveDef not found.');
-        ngDevMode &&
-            assertDefined(directiveDef.contentQueries, 'contentQueries function should be defined');
-        setCurrentQueryIndex(queryStartIdx);
-        directiveDef.contentQueries!(RenderFlags.Update, lView[directiveDefIdx], directiveDefIdx);
+    const prevConsumer = setActiveConsumer(null);
+    try {
+      for (let i = 0; i < contentQueries.length; i += 2) {
+        const queryStartIdx = contentQueries[i];
+        const directiveDefIdx = contentQueries[i + 1];
+        if (directiveDefIdx !== -1) {
+          const directiveDef = tView.data[directiveDefIdx] as DirectiveDef<any>;
+          ngDevMode && assertDefined(directiveDef, 'DirectiveDef not found.');
+          ngDevMode &&
+              assertDefined(
+                  directiveDef.contentQueries, 'contentQueries function should be defined');
+          setCurrentQueryIndex(queryStartIdx);
+          directiveDef.contentQueries!(RenderFlags.Update, lView[directiveDefIdx], directiveDefIdx);
+        }
       }
+    } finally {
+      setActiveConsumer(prevConsumer);
     }
   }
 }
@@ -1575,15 +1619,17 @@ export function handleError(lView: LView, error: any): void {
  * @param value Value to set.
  */
 export function setInputsForProperty(
-    tView: TView, lView: LView, inputs: PropertyAliasValue, publicName: string, value: any): void {
+    tView: TView, lView: LView, inputs: NodeInputBindings[typeof publicName], publicName: string,
+    value: unknown): void {
   for (let i = 0; i < inputs.length;) {
     const index = inputs[i++] as number;
     const privateName = inputs[i++] as string;
+    const flags = inputs[i++] as InputFlags;
     const instance = lView[index];
     ngDevMode && assertIndexInRange(lView, index);
     const def = tView.data[index] as DirectiveDef<any>;
 
-    writeToDirectiveInput(def, instance, publicName, privateName, value);
+    writeToDirectiveInput(def, instance, publicName, privateName, flags, value);
   }
 }
 

@@ -10,8 +10,8 @@ import {EventEmitter, NgZone} from '@angular/core';
 import {fakeAsync, flushMicrotasks, inject, waitForAsync} from '@angular/core/testing';
 import {Log} from '@angular/core/testing/src/testing_internal';
 
+import {getCallbackScheduler} from '../../src/util/callback_scheduler';
 import {global} from '../../src/util/global';
-import {getNativeRequestAnimationFrame} from '../../src/util/raf';
 import {NoopNgZone} from '../../src/zone/ng_zone';
 
 const resultTimer = 1000;
@@ -61,171 +61,171 @@ function runNgZoneNoLog(fn: () => any) {
   }
 }
 
-{
-  describe('NgZone', () => {
-    function createZone(enableLongStackTrace: boolean) {
-      return new NgZone({enableLongStackTrace: enableLongStackTrace});
-    }
 
+describe('NgZone', () => {
+  function createZone(enableLongStackTrace: boolean) {
+    return new NgZone({enableLongStackTrace: enableLongStackTrace});
+  }
+
+  beforeEach(() => {
+    _log = new Log();
+    _errors = [];
+    _traces = [];
+  });
+
+  describe('long stack trace', () => {
     beforeEach(() => {
-      _log = new Log();
-      _errors = [];
-      _traces = [];
+      _zone = createZone(true);
+      logOnUnstable();
+      logOnMicrotaskEmpty();
+      logOnStable();
+      logOnError();
     });
 
-    describe('long stack trace', () => {
-      beforeEach(() => {
-        _zone = createZone(true);
-        logOnUnstable();
-        logOnMicrotaskEmpty();
-        logOnStable();
-        logOnError();
-      });
+    commonTests();
 
-      commonTests();
+    it('should produce long stack traces', done => {
+      macroTask(() => {
+        let resolve: (result: any) => void;
+        const promise: Promise<any> = new Promise((res) => {
+          resolve = res;
+        });
 
-      it('should produce long stack traces', done => {
-        macroTask(() => {
-          let resolve: (result: any) => void;
-          const promise: Promise<any> = new Promise((res) => {
-            resolve = res;
-          });
-
-          _zone.run(() => {
+        _zone.run(() => {
+          setTimeout(() => {
             setTimeout(() => {
-              setTimeout(() => {
-                resolve(null);
-                throw new Error('ccc');
-              }, 0);
+              resolve(null);
+              throw new Error('ccc');
             }, 0);
-          });
+          }, 0);
+        });
 
-          promise.then((_) => {
-            expect(_traces.length).toBe(1);
-            expect(_traces[0].length).toBeGreaterThan(1);
-            done();
-          });
+        promise.then((_) => {
+          expect(_traces.length).toBe(1);
+          expect(_traces[0].length).toBeGreaterThan(1);
+          done();
         });
       });
+    });
 
-      it('should produce long stack traces (when using microtasks)', done => {
-        macroTask(() => {
-          let resolve: (result: any) => void;
-          const promise: Promise<any> = new Promise((res) => {
-            resolve = res;
-          });
+    it('should produce long stack traces (when using microtasks)', done => {
+      macroTask(() => {
+        let resolve: (result: any) => void;
+        const promise: Promise<any> = new Promise((res) => {
+          resolve = res;
+        });
 
-          _zone.run(() => {
+        _zone.run(() => {
+          queueMicrotask(() => {
             queueMicrotask(() => {
-              queueMicrotask(() => {
-                resolve(null);
-                throw new Error('ddd');
-              });
+              resolve(null);
+              throw new Error('ddd');
             });
           });
+        });
 
-          promise.then((_) => {
-            expect(_traces.length).toBe(1);
-            expect(_traces[0].length).toBeGreaterThan(1);
-            done();
-          });
+        promise.then((_) => {
+          expect(_traces.length).toBe(1);
+          expect(_traces[0].length).toBeGreaterThan(1);
+          done();
         });
       });
     });
+  });
 
-    describe('short stack trace', () => {
-      beforeEach(() => {
-        _zone = createZone(false);
-        logOnUnstable();
-        logOnMicrotaskEmpty();
-        logOnStable();
-        logOnError();
-      });
+  describe('short stack trace', () => {
+    beforeEach(() => {
+      _zone = createZone(false);
+      logOnUnstable();
+      logOnMicrotaskEmpty();
+      logOnStable();
+      logOnError();
+    });
 
-      commonTests();
+    commonTests();
 
-      it('should disable long stack traces', done => {
-        macroTask(() => {
-          let resolve: (result: any) => void;
-          const promise: Promise<any> = new Promise((res) => {
-            resolve = res;
-          });
+    it('should disable long stack traces', done => {
+      macroTask(() => {
+        let resolve: (result: any) => void;
+        const promise: Promise<any> = new Promise((res) => {
+          resolve = res;
+        });
 
-          _zone.run(() => {
+        _zone.run(() => {
+          setTimeout(() => {
             setTimeout(() => {
-              setTimeout(() => {
-                resolve(null);
-                throw new Error('ccc');
-              }, 0);
+              resolve(null);
+              throw new Error('ccc');
             }, 0);
-          });
+          }, 0);
+        });
 
-          promise.then((_) => {
-            expect(_traces.length).toBe(1);
-            if (_traces[0] != null) {
-              // some browsers don't have stack traces.
-              expect(_traces[0].indexOf('---')).toEqual(-1);
-            }
-            done();
-          });
+        promise.then((_) => {
+          expect(_traces.length).toBe(1);
+          if (_traces[0] != null) {
+            // some browsers don't have stack traces.
+            expect(_traces[0].indexOf('---')).toEqual(-1);
+          }
+          done();
         });
       });
     });
   });
+});
 
-  describe('NoopNgZone', () => {
-    const ngZone = new NoopNgZone();
+describe('NoopNgZone', () => {
+  const ngZone = new NoopNgZone();
 
-    it('should run', () => {
-      let runs = false;
-      ngZone.run(() => {
-        ngZone.runGuarded(() => {
-          ngZone.runOutsideAngular(() => {
-            runs = true;
-          });
+  it('should run', () => {
+    let runs = false;
+    ngZone.run(() => {
+      ngZone.runGuarded(() => {
+        ngZone.runOutsideAngular(() => {
+          runs = true;
         });
       });
-      expect(runs).toBe(true);
     });
+    expect(runs).toBe(true);
+  });
 
-    it('should run with this context and arguments', () => {
-      let runs = false;
-      let applyThisArray: any[] = [];
-      let applyArgsArray: any[] = [];
-      const testContext = {};
-      const testArgs = ['args'];
-      ngZone.run(function(this: any, arg: any) {
+  it('should run with this context and arguments', () => {
+    let runs = false;
+    let applyThisArray: any[] = [];
+    let applyArgsArray: any[] = [];
+    const testContext = {};
+    const testArgs = ['args'];
+    ngZone.run(function(this: any, arg: any) {
+      applyThisArray.push(this);
+      applyArgsArray.push([arg]);
+      ngZone.runGuarded(function(this: any, argGuarded: any) {
         applyThisArray.push(this);
-        applyArgsArray.push([arg]);
-        ngZone.runGuarded(function(this: any, argGuarded: any) {
+        applyArgsArray.push([argGuarded]);
+        ngZone.runOutsideAngular(function(this: any, argOutsideAngular: any) {
           applyThisArray.push(this);
-          applyArgsArray.push([argGuarded]);
-          ngZone.runOutsideAngular(function(this: any, argOutsideAngular: any) {
-            applyThisArray.push(this);
-            applyArgsArray.push([argOutsideAngular]);
-            runs = true;
-          });
-        }, this, [arg]);
-      }, testContext, testArgs);
-      expect(runs).toBe(true);
-      expect(applyThisArray.length).toBe(3);
-      expect(applyArgsArray.length).toBe(3);
-      expect(applyThisArray[0]).toBe(testContext);
-      expect(applyThisArray[1]).toBe(testContext);
-      expect(applyThisArray[2]).not.toBe(testContext);
-      expect(applyArgsArray[0]).toEqual(testArgs);
-      expect(applyArgsArray[1]).toEqual(testArgs);
-      expect(applyArgsArray[2]).toEqual([undefined]);
-    });
-
-    it('should have EventEmitter instances', () => {
-      expect(ngZone.onError instanceof EventEmitter).toBe(true);
-      expect(ngZone.onStable instanceof EventEmitter).toBe(true);
-      expect(ngZone.onUnstable instanceof EventEmitter).toBe(true);
-      expect(ngZone.onMicrotaskEmpty instanceof EventEmitter).toBe(true);
-    });
+          applyArgsArray.push([argOutsideAngular]);
+          runs = true;
+        });
+      }, this, [arg]);
+    }, testContext, testArgs);
+    expect(runs).toBe(true);
+    expect(applyThisArray.length).toBe(3);
+    expect(applyArgsArray.length).toBe(3);
+    expect(applyThisArray[0]).toBe(testContext);
+    expect(applyThisArray[1]).toBe(testContext);
+    expect(applyThisArray[2]).not.toBe(testContext);
+    expect(applyArgsArray[0]).toEqual(testArgs);
+    expect(applyArgsArray[1]).toEqual(testArgs);
+    expect(applyArgsArray[2]).toEqual([undefined]);
   });
-}
+
+  it('should have EventEmitter instances', () => {
+    expect(ngZone.onError instanceof EventEmitter).toBe(true);
+    expect(ngZone.onStable instanceof EventEmitter).toBe(true);
+    expect(ngZone.onUnstable instanceof EventEmitter).toBe(true);
+    expect(ngZone.onMicrotaskEmpty instanceof EventEmitter).toBe(true);
+  });
+});
+
 
 function commonTests() {
   describe('hasPendingMicrotasks', () => {
@@ -910,6 +910,31 @@ function commonTests() {
   });
 
   describe('coalescing', () => {
+    it('should execute callback when a view transition is waiting for the callback to complete',
+       async () => {
+         if (!(document as any).startViewTransition) {
+           return;
+         }
+
+         const scheduler = getCallbackScheduler();
+         const startTime = performance.now();
+         // When there is a pending view transition, `requestAnimationFrame` is blocked
+         // because the browser is waiting to take a screenshot. This test ensures that
+         // the scheduler does not block completion of the transition for too long.
+         // This test would fail if the scheduling function _only_ used `rAF`
+         // but works if there is another mechanism as well (i.e. race with setTimeout).
+         // https://github.com/angular/angular/issues/54544
+         const transition = (document as any).startViewTransition(() => {
+           return new Promise<void>(resolve => {
+             scheduler(() => {
+               resolve();
+             });
+           });
+         });
+         await transition.finished;
+         expect(performance.now() - startTime).toBeLessThan(1000);
+       });
+
     describe(
         'shouldCoalesceRunChangeDetection = false, shouldCoalesceEventChangeDetection = false',
         () => {
@@ -959,15 +984,8 @@ function commonTests() {
         });
 
     describe('shouldCoalesceEventChangeDetection = true, shouldCoalesceRunChangeDetection = false', () => {
-      let nativeRequestAnimationFrame: (fn: FrameRequestCallback) => void;
+      const scheduler = getCallbackScheduler();
       let nativeSetTimeout: any = global[Zone.__symbol__('setTimeout')];
-      if (!global.requestAnimationFrame) {
-        nativeRequestAnimationFrame = function(fn: Function) {
-          global[Zone.__symbol__('setTimeout')](fn, 16);
-        };
-      } else {
-        nativeRequestAnimationFrame = getNativeRequestAnimationFrame().nativeRequestAnimationFrame;
-      }
       let patchedImmediate: any;
       let coalesceZone: NgZone;
       let logs: string[] = [];
@@ -995,7 +1013,7 @@ function commonTests() {
         });
         task!.invoke();
         expect(logs).toEqual(['microTask empty', 'myEvent']);
-        nativeRequestAnimationFrame(() => {
+        scheduler(() => {
           expect(logs).toEqual(['microTask empty', 'myEvent', 'microTask empty']);
           done();
         });
@@ -1014,7 +1032,7 @@ function commonTests() {
            });
            tasks.forEach(t => t.invoke());
            expect(logs).toEqual(['microTask empty', 'eventTask1', 'eventTask2']);
-           nativeRequestAnimationFrame(() => {
+           scheduler(() => {
              expect(logs).toEqual(
                  ['microTask empty', 'eventTask1', 'eventTask2', 'microTask empty']);
              done();
@@ -1063,7 +1081,7 @@ function commonTests() {
            });
            tasks.forEach(t => t.invoke());
            expect(logs).toEqual(['microTask empty', 'eventTask1', 'eventTask2', 'macroTask']);
-           nativeRequestAnimationFrame(() => {
+           scheduler(() => {
              expect(logs).toEqual(
                  ['microTask empty', 'eventTask1', 'eventTask2', 'macroTask', 'microTask empty']);
              done();
@@ -1087,7 +1105,7 @@ function commonTests() {
            tasks.forEach(t => t.invoke());
            expect(logs).toEqual(
                ['microTask empty', 'macroTask', 'microTask empty', 'eventTask1', 'eventTask2']);
-           nativeRequestAnimationFrame(() => {
+           scheduler(() => {
              expect(logs).toEqual([
                'microTask empty', 'macroTask', 'microTask empty', 'eventTask1', 'eventTask2',
                'microTask empty'
@@ -1098,15 +1116,8 @@ function commonTests() {
     });
 
     describe('shouldCoalesceRunChangeDetection = true', () => {
-      let nativeRequestAnimationFrame: (fn: FrameRequestCallback) => void;
+      const scheduler = getCallbackScheduler();
       let nativeSetTimeout: any = global[Zone.__symbol__('setTimeout')];
-      if (!global.requestAnimationFrame) {
-        nativeRequestAnimationFrame = function(fn: Function) {
-          global[Zone.__symbol__('setTimeout')](fn, 16);
-        };
-      } else {
-        nativeRequestAnimationFrame = getNativeRequestAnimationFrame().nativeRequestAnimationFrame;
-      }
       let patchedImmediate: any;
       let coalesceZone: NgZone;
       let logs: string[] = [];
@@ -1128,7 +1139,7 @@ function commonTests() {
       it('should run in requestAnimationFrame async', done => {
         coalesceZone.run(() => {});
         expect(logs).toEqual([]);
-        nativeRequestAnimationFrame(() => {
+        scheduler(() => {
           expect(logs).toEqual(['microTask empty']);
           done();
         });
@@ -1139,7 +1150,7 @@ function commonTests() {
            coalesceZone.run(() => {});
            coalesceZone.run(() => {});
            expect(logs).toEqual([]);
-           nativeRequestAnimationFrame(() => {
+           scheduler(() => {
              expect(logs).toEqual(['microTask empty']);
              done();
            });
@@ -1178,7 +1189,7 @@ function commonTests() {
            });
            tasks.forEach(t => t.invoke());
            expect(logs).toEqual(['macroTask', 'eventTask1', 'eventTask2', 'macroTask']);
-           nativeRequestAnimationFrame(() => {
+           scheduler(() => {
              expect(logs).toEqual(
                  ['macroTask', 'eventTask1', 'eventTask2', 'macroTask', 'microTask empty']);
              done();

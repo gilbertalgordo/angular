@@ -6,14 +6,16 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {getEnsureDirtyViewsAreAlwaysReachable} from '../../change_detection/flags';
+import {NotificationType} from '../../change_detection/scheduling/zoneless_scheduling';
 import {RuntimeError, RuntimeErrorCode} from '../../errors';
 import {assertDefined, assertGreaterThan, assertGreaterThanOrEqual, assertIndexInRange, assertLessThan} from '../../util/assert';
-import {assertTNode, assertTNodeForLView} from '../assert';
+import {assertLView, assertTNode, assertTNodeForLView} from '../assert';
 import {LContainer, TYPE} from '../interfaces/container';
 import {TConstants, TNode} from '../interfaces/node';
 import {RNode} from '../interfaces/renderer_dom';
 import {isLContainer, isLView} from '../interfaces/type_checks';
-import {DECLARATION_VIEW, DESCENDANT_VIEWS_TO_REFRESH, FLAGS, HEADER_OFFSET, HOST, LView, LViewFlags, ON_DESTROY_HOOKS, PARENT, PREORDER_HOOK_FLAGS, PreOrderHookFlags, TData, TView} from '../interfaces/view';
+import {DECLARATION_VIEW, ENVIRONMENT, FLAGS, HEADER_OFFSET, HOST, LView, LViewFlags, ON_DESTROY_HOOKS, PARENT, PREORDER_HOOK_FLAGS, PreOrderHookFlags, REACTIVE_TEMPLATE_CONSUMER, TData, TView} from '../interfaces/view';
 
 
 
@@ -165,24 +167,16 @@ export function resetPreOrderHookFlags(lView: LView) {
 }
 
 /**
- * Adds the `RefreshView` flag from the lView and updates DESCENDANT_VIEWS_TO_REFRESH counters of
+ * Adds the `RefreshView` flag from the lView and updates HAS_CHILD_VIEWS_TO_REFRESH flag of
  * parents.
  */
 export function markViewForRefresh(lView: LView) {
-  if ((lView[FLAGS] & LViewFlags.RefreshView) === 0) {
-    lView[FLAGS] |= LViewFlags.RefreshView;
-    updateViewsToRefresh(lView, 1);
-  }
-}
-
-/**
- * Removes the `RefreshView` flag from the lView and updates DESCENDANT_VIEWS_TO_REFRESH counters of
- * parents.
- */
-export function clearViewRefreshFlag(lView: LView) {
   if (lView[FLAGS] & LViewFlags.RefreshView) {
-    lView[FLAGS] &= ~LViewFlags.RefreshView;
-    updateViewsToRefresh(lView, -1);
+    return;
+  }
+  lView[FLAGS] |= LViewFlags.RefreshView;
+  if (viewAttachedToChangeDetector(lView)) {
+    markAncestorsForTraversal(lView);
   }
 }
 
@@ -203,28 +197,56 @@ export function walkUpViews(nestingLevel: number, currentView: LView): LView {
   return currentView;
 }
 
+export function requiresRefreshOrTraversal(lView: LView) {
+  return !!(
+      lView[FLAGS] & (LViewFlags.RefreshView | LViewFlags.HasChildViewsToRefresh) ||
+      lView[REACTIVE_TEMPLATE_CONSUMER]?.dirty);
+}
+
 
 /**
- * Updates the `DESCENDANT_VIEWS_TO_REFRESH` counter on the parents of the `LView` as well as the
- * parents above that whose
- *  1. counter goes from 0 to 1, indicating that there is a new child that has a view to refresh
- *  or
- *  2. counter goes from 1 to 0, indicating there are no more descendant views to refresh
+ * Updates the `HasChildViewsToRefresh` flag on the parents of the `LView` as well as the
+ * parents above.
  */
-function updateViewsToRefresh(lView: LView, amount: 1|- 1) {
-  let parent: LView|LContainer|null = lView[PARENT];
-  if (parent === null) {
-    return;
+export function updateAncestorTraversalFlagsOnAttach(lView: LView) {
+  lView[ENVIRONMENT].changeDetectionScheduler?.notify(NotificationType.AfterRenderHooks);
+  // TODO(atscott): Simplify if...else cases once getEnsureDirtyViewsAreAlwaysReachable is always
+  // `true`. When we attach a view that's marked `Dirty`, we should ensure that it is reached during
+  // the next CD traversal so we add the `RefreshView` flag and mark ancestors accordingly.
+  if (requiresRefreshOrTraversal(lView)) {
+    markAncestorsForTraversal(lView);
+  } else if (lView[FLAGS] & LViewFlags.Dirty) {
+    if (getEnsureDirtyViewsAreAlwaysReachable()) {
+      lView[FLAGS] |= LViewFlags.RefreshView;
+      markAncestorsForTraversal(lView);
+    } else {
+      lView[ENVIRONMENT].changeDetectionScheduler?.notify();
+    }
   }
-  parent[DESCENDANT_VIEWS_TO_REFRESH] += amount;
-  let viewOrContainer: LView|LContainer = parent;
-  parent = parent[PARENT];
-  while (parent !== null &&
-         ((amount === 1 && viewOrContainer[DESCENDANT_VIEWS_TO_REFRESH] === 1) ||
-          (amount === -1 && viewOrContainer[DESCENDANT_VIEWS_TO_REFRESH] === 0))) {
-    parent[DESCENDANT_VIEWS_TO_REFRESH] += amount;
-    viewOrContainer = parent;
-    parent = parent[PARENT];
+}
+
+/**
+ * Ensures views above the given `lView` are traversed during change detection even when they are
+ * not dirty.
+ *
+ * This is done by setting the `HAS_CHILD_VIEWS_TO_REFRESH` flag up to the root, stopping when the
+ * flag is already `true` or the `lView` is detached.
+ */
+export function markAncestorsForTraversal(lView: LView) {
+  lView[ENVIRONMENT].changeDetectionScheduler?.notify();
+  let parent = getLViewParent(lView);
+  while (parent !== null) {
+    // We stop adding markers to the ancestors once we reach one that already has the marker. This
+    // is to avoid needlessly traversing all the way to the root when the marker already exists.
+    if (parent[FLAGS] & LViewFlags.HasChildViewsToRefresh) {
+      break;
+    }
+
+    parent[FLAGS] |= LViewFlags.HasChildViewsToRefresh;
+    if (!viewAttachedToChangeDetector(parent)) {
+      break;
+    }
+    parent = getLViewParent(parent);
   }
 }
 
@@ -252,4 +274,15 @@ export function removeLViewOnDestroy(lView: LView, onDestroyCallback: () => void
   if (destroyCBIdx !== -1) {
     lView[ON_DESTROY_HOOKS].splice(destroyCBIdx, 1);
   }
+}
+
+/**
+ * Gets the parent LView of the passed LView, if the PARENT is an LContainer, will get the parent of
+ * that LContainer, which is an LView
+ * @param lView the lView whose parent to get
+ */
+export function getLViewParent(lView: LView): LView|null {
+  ngDevMode && assertLView(lView);
+  const parent = lView[PARENT];
+  return isLContainer(parent) ? parent[PARENT] : parent;
 }

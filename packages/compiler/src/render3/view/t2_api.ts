@@ -93,7 +93,20 @@ export interface DirectiveMeta {
    */
   exportAs: string[]|null;
 
+  /**
+   * Whether the directive is a structural directive (e.g. `<div *ngIf></div>`).
+   */
   isStructural: boolean;
+
+  /**
+   * If the directive is a component, includes the selectors of its `ng-content` elements.
+   */
+  ngContentSelectors: string[]|null;
+
+  /**
+   * Whether the template of the component preserves whitespaces.
+   */
+  preserveWhitespaces: boolean;
 
   /**
    * The name of animations that the user defines in the component.
@@ -181,30 +194,30 @@ export interface BoundTarget<DirectiveT extends DirectiveMeta> {
 
   /**
    * Get a list of all the directives used by the target,
-   * including directives from `{#defer}` blocks.
+   * including directives from `@defer` blocks.
    */
   getUsedDirectives(): DirectiveT[];
 
   /**
    * Get a list of eagerly used directives from the target.
-   * Note: this list *excludes* directives from `{#defer}` blocks.
+   * Note: this list *excludes* directives from `@defer` blocks.
    */
   getEagerlyUsedDirectives(): DirectiveT[];
 
   /**
    * Get a list of all the pipes used by the target,
-   * including pipes from `{#defer}` blocks.
+   * including pipes from `@defer` blocks.
    */
   getUsedPipes(): string[];
 
   /**
    * Get a list of eagerly used pipes from the target.
-   * Note: this list *excludes* pipes from `{#defer}` blocks.
+   * Note: this list *excludes* pipes from `@defer` blocks.
    */
   getEagerlyUsedPipes(): string[];
 
   /**
-   * Get a list of all {#defer} blocks used by the target.
+   * Get a list of all `@defer` blocks used by the target.
    */
   getDeferBlocks(): DeferredBlock[];
 
@@ -213,5 +226,10 @@ export interface BoundTarget<DirectiveT extends DirectiveMeta> {
    * @param block Block that the trigger belongs to.
    * @param trigger Trigger whose target is being looked up.
    */
-  getDeferredTriggerTarget(block: DeferredTrigger, trigger: DeferredTrigger): Element|null;
+  getDeferredTriggerTarget(block: DeferredBlock, trigger: DeferredTrigger): Element|null;
+
+  /**
+   * Whether a given node is located in a `@defer` block.
+   */
+  isDeferred(node: Element): boolean;
 }

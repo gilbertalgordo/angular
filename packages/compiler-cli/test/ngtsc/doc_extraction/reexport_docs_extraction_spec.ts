@@ -13,9 +13,9 @@ import {loadStandardTestFiles} from '@angular/compiler-cli/src/ngtsc/testing';
 
 import {NgtscTestEnvironment} from '../env';
 
-const testFiles = loadStandardTestFiles({fakeCore: true, fakeCommon: true});
+const testFiles = loadStandardTestFiles({fakeCommon: true});
 
-runInEachFileSystem(os => {
+runInEachFileSystem(() => {
   let env!: NgtscTestEnvironment;
 
   describe('ngtsc re-export docs extraction', () => {
@@ -89,7 +89,7 @@ runInEachFileSystem(os => {
 
       env.write('implementation.ts', `
         const PI = 3.14;
-        
+
         export {PI as PI_CONSTANT};
       `);
 

@@ -13,8 +13,11 @@ import {AstHost, Range} from './ast_host';
 
 /**
  * Represents only those types in `T` that are object types.
+ *
+ * Note: Excluding `Array` types as we consider object literals are "objects"
+ * in the AST.
  */
-type ObjectType<T> = Extract<T, object>;
+type ObjectType<T> = T extends Array<any>? never : T extends Record<string, any>? T : never;
 
 /**
  * Represents the value type of an object literal.
@@ -196,6 +199,9 @@ export class AstObject<T extends object, TExpression> {
  * main goal is to provide references to a documented type.
  */
 export class AstValue<T, TExpression> {
+  /** Type brand that ensures that the `T` type is respected for assignability. */
+  ɵtypeBrand: T = null!;
+
   constructor(readonly expression: TExpression, private host: AstHost<TExpression>) {}
 
   /**
@@ -269,6 +275,11 @@ export class AstValue<T, TExpression> {
     return this.host.isArrayLiteral(this.expression);
   }
 
+  /** Whether the value is explicitly set to `null`. */
+  isNull(): boolean {
+    return this.host.isNull(this.expression);
+  }
+
   /**
    * Parse this value into an array of `AstValue` objects, or error if it is not an array literal.
    */
@@ -290,6 +301,14 @@ export class AstValue<T, TExpression> {
    */
   getFunctionReturnValue<R>(this: ConformsTo<this, T, Function>): AstValue<R, TExpression> {
     return new AstValue(this.host.parseReturnValue(this.expression), this.host);
+  }
+
+  /**
+   * Extract the parameters from this value as a function expression, or error if it is not a
+   * function expression.
+   */
+  getFunctionParameters<R>(this: ConformsTo<this, T, Function>): AstValue<R, TExpression>[] {
+    return this.host.parseParameters(this.expression).map(param => new AstValue(param, this.host));
   }
 
   isCallExpression(): boolean {

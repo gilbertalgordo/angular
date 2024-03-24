@@ -115,47 +115,47 @@ export abstract class BaseRouteReuseStrategy implements RouteReuseStrategy {
 // @public @deprecated
 export interface CanActivate {
     // (undocumented)
-    canActivate(route: ActivatedRouteSnapshot, state: RouterStateSnapshot): Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean | UrlTree;
+    canActivate(route: ActivatedRouteSnapshot, state: RouterStateSnapshot): MaybeAsync<GuardResult>;
 }
 
 // @public @deprecated
 export interface CanActivateChild {
     // (undocumented)
-    canActivateChild(childRoute: ActivatedRouteSnapshot, state: RouterStateSnapshot): Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean | UrlTree;
+    canActivateChild(childRoute: ActivatedRouteSnapshot, state: RouterStateSnapshot): MaybeAsync<GuardResult>;
 }
 
 // @public
-export type CanActivateChildFn = (childRoute: ActivatedRouteSnapshot, state: RouterStateSnapshot) => Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean | UrlTree;
+export type CanActivateChildFn = (childRoute: ActivatedRouteSnapshot, state: RouterStateSnapshot) => MaybeAsync<GuardResult>;
 
 // @public
-export type CanActivateFn = (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean | UrlTree;
+export type CanActivateFn = (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => MaybeAsync<GuardResult>;
 
 // @public @deprecated
 export interface CanDeactivate<T> {
     // (undocumented)
-    canDeactivate(component: T, currentRoute: ActivatedRouteSnapshot, currentState: RouterStateSnapshot, nextState: RouterStateSnapshot): Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean | UrlTree;
+    canDeactivate(component: T, currentRoute: ActivatedRouteSnapshot, currentState: RouterStateSnapshot, nextState: RouterStateSnapshot): MaybeAsync<GuardResult>;
 }
 
 // @public
-export type CanDeactivateFn<T> = (component: T, currentRoute: ActivatedRouteSnapshot, currentState: RouterStateSnapshot, nextState: RouterStateSnapshot) => Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean | UrlTree;
+export type CanDeactivateFn<T> = (component: T, currentRoute: ActivatedRouteSnapshot, currentState: RouterStateSnapshot, nextState: RouterStateSnapshot) => MaybeAsync<GuardResult>;
 
 // @public @deprecated
 export interface CanLoad {
     // (undocumented)
-    canLoad(route: Route, segments: UrlSegment[]): Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean | UrlTree;
+    canLoad(route: Route, segments: UrlSegment[]): MaybeAsync<GuardResult>;
 }
 
 // @public @deprecated
-export type CanLoadFn = (route: Route, segments: UrlSegment[]) => Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean | UrlTree;
+export type CanLoadFn = (route: Route, segments: UrlSegment[]) => MaybeAsync<GuardResult>;
 
 // @public @deprecated
 export interface CanMatch {
     // (undocumented)
-    canMatch(route: Route, segments: UrlSegment[]): Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean | UrlTree;
+    canMatch(route: Route, segments: UrlSegment[]): MaybeAsync<GuardResult>;
 }
 
 // @public
-export type CanMatchFn = (route: Route, segments: UrlSegment[]) => Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean | UrlTree;
+export type CanMatchFn = (route: Route, segments: UrlSegment[]) => MaybeAsync<GuardResult>;
 
 // @public
 export class ChildActivationEnd {
@@ -255,7 +255,7 @@ type Event_2 = NavigationStart | NavigationEnd | NavigationCancel | NavigationEr
 export { Event_2 as Event }
 
 // @public
-export const enum EventType {
+export enum EventType {
     // (undocumented)
     ActivationEnd = 14,
     // (undocumented)
@@ -304,6 +304,9 @@ export interface ExtraOptions extends InMemoryScrollingOptions, RouterConfigOpti
     scrollOffset?: [number, number] | (() => [number, number]);
     useHash?: boolean;
 }
+
+// @public
+export type GuardResult = boolean | UrlTree | RedirectCommand;
 
 // @public
 export class GuardsCheckEnd extends RouterEvent {
@@ -397,6 +400,9 @@ export function mapToResolve<T>(provider: Type<{
 }>): ResolveFn<T>;
 
 // @public
+export type MaybeAsync<T> = T | Observable<T> | Promise<T>;
+
+// @public
 export interface Navigation {
     extractedUrl: UrlTree;
     extras: NavigationExtras;
@@ -409,7 +415,8 @@ export interface Navigation {
 
 // @public
 export interface NavigationBehaviorOptions {
-    onSameUrlNavigation?: Extract<OnSameUrlNavigation, 'reload'>;
+    readonly info?: unknown;
+    onSameUrlNavigation?: OnSameUrlNavigation;
     replaceUrl?: boolean;
     skipLocationChange?: boolean;
     state?: {
@@ -433,7 +440,7 @@ export class NavigationCancel extends RouterEvent {
 }
 
 // @public
-export const enum NavigationCancellationCode {
+export enum NavigationCancellationCode {
     GuardRejected = 3,
     NoDataFromResolver = 2,
     Redirect = 0,
@@ -491,7 +498,7 @@ export class NavigationSkipped extends RouterEvent {
 }
 
 // @public
-export const enum NavigationSkippedCode {
+export enum NavigationSkippedCode {
     IgnoredByUrlHandlingStrategy = 1,
     IgnoredSameUrlNavigation = 0
 }
@@ -588,10 +595,22 @@ export function provideRoutes(routes: Routes): Provider[];
 // @public
 export type QueryParamsHandling = 'merge' | 'preserve' | '';
 
+// @public
+export class RedirectCommand {
+    constructor(redirectTo: UrlTree, navigationBehaviorOptions?: NavigationBehaviorOptions | undefined);
+    // (undocumented)
+    readonly navigationBehaviorOptions?: NavigationBehaviorOptions | undefined;
+    // (undocumented)
+    readonly redirectTo: UrlTree;
+}
+
+// @public
+export type RedirectFunction = (redirectData: Pick<ActivatedRouteSnapshot, 'routeConfig' | 'url' | 'params' | 'queryParams' | 'fragment' | 'data' | 'outlet' | 'title'>) => string | UrlTree;
+
 // @public @deprecated
 export interface Resolve<T> {
     // (undocumented)
-    resolve(route: ActivatedRouteSnapshot, state: RouterStateSnapshot): Observable<T> | Promise<T> | T;
+    resolve(route: ActivatedRouteSnapshot, state: RouterStateSnapshot): MaybeAsync<T>;
 }
 
 // @public
@@ -617,7 +636,7 @@ export class ResolveEnd extends RouterEvent {
 }
 
 // @public
-export type ResolveFn<T> = (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => Observable<T> | Promise<T> | T;
+export type ResolveFn<T> = (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => MaybeAsync<T>;
 
 // @public
 export class ResolveStart extends RouterEvent {
@@ -654,7 +673,7 @@ export interface Route {
     path?: string;
     pathMatch?: 'prefix' | 'full';
     providers?: Array<Provider | EnvironmentProviders>;
-    redirectTo?: string;
+    redirectTo?: string | RedirectFunction;
     resolve?: ResolveData;
     runGuardsAndResolvers?: RunGuardsAndResolvers;
     title?: string | Type<Resolve<string>> | ResolveFn<string>;
@@ -733,6 +752,7 @@ export interface RouterConfigOptions {
     canceledNavigationResolution?: 'replace' | 'computed';
     onSameUrlNavigation?: OnSameUrlNavigation;
     paramsInheritanceStrategy?: 'emptyOnly' | 'always';
+    resolveNavigationPromiseOnError?: boolean;
     urlUpdateStrategy?: 'deferred' | 'eager';
 }
 
@@ -770,7 +790,7 @@ export interface RouterFeature<FeatureKind extends RouterFeatureKind> {
 }
 
 // @public
-export type RouterFeatures = PreloadingFeature | DebugTracingFeature | InitialNavigationFeature | InMemoryScrollingFeature | RouterConfigurationFeature | NavigationErrorHandlerFeature | ComponentInputBindingFeature | ViewTransitionsFeature;
+export type RouterFeatures = PreloadingFeature | DebugTracingFeature | InitialNavigationFeature | InMemoryScrollingFeature | RouterConfigurationFeature | NavigationErrorHandlerFeature | ComponentInputBindingFeature | ViewTransitionsFeature | RouterHashLocationFeature;
 
 // @public
 export type RouterHashLocationFeature = RouterFeature<RouterFeatureKind.RouterHashLocationFeature>;
@@ -780,6 +800,7 @@ class RouterLink implements OnChanges, OnDestroy {
     constructor(router: Router, route: ActivatedRoute, tabIndexAttribute: string | null | undefined, renderer: Renderer2, el: ElementRef, locationStrategy?: LocationStrategy | undefined);
     fragment?: string;
     href: string | null;
+    info?: unknown;
     // (undocumented)
     static ngAcceptInputType_preserveFragment: unknown;
     // (undocumented)
@@ -806,7 +827,7 @@ class RouterLink implements OnChanges, OnDestroy {
     // (undocumented)
     get urlTree(): UrlTree | null;
     // (undocumented)
-    static ɵdir: i0.ɵɵDirectiveDeclaration<RouterLink, "[routerLink]", never, { "target": { "alias": "target"; "required": false; }; "queryParams": { "alias": "queryParams"; "required": false; }; "fragment": { "alias": "fragment"; "required": false; }; "queryParamsHandling": { "alias": "queryParamsHandling"; "required": false; }; "state": { "alias": "state"; "required": false; }; "relativeTo": { "alias": "relativeTo"; "required": false; }; "preserveFragment": { "alias": "preserveFragment"; "required": false; }; "skipLocationChange": { "alias": "skipLocationChange"; "required": false; }; "replaceUrl": { "alias": "replaceUrl"; "required": false; }; "routerLink": { "alias": "routerLink"; "required": false; }; }, {}, never, never, true, never>;
+    static ɵdir: i0.ɵɵDirectiveDeclaration<RouterLink, "[routerLink]", never, { "target": { "alias": "target"; "required": false; }; "queryParams": { "alias": "queryParams"; "required": false; }; "fragment": { "alias": "fragment"; "required": false; }; "queryParamsHandling": { "alias": "queryParamsHandling"; "required": false; }; "state": { "alias": "state"; "required": false; }; "info": { "alias": "info"; "required": false; }; "relativeTo": { "alias": "relativeTo"; "required": false; }; "preserveFragment": { "alias": "preserveFragment"; "required": false; }; "skipLocationChange": { "alias": "skipLocationChange"; "required": false; }; "replaceUrl": { "alias": "replaceUrl"; "required": false; }; "routerLink": { "alias": "routerLink"; "required": false; }; }, {}, never, never, true, never>;
     // (undocumented)
     static ɵfac: i0.ɵɵFactoryDeclaration<RouterLink, [null, null, { attribute: "tabindex"; }, null, null, null]>;
 }
@@ -1086,7 +1107,25 @@ export class UrlTree {
 export const VERSION: Version;
 
 // @public
+export interface ViewTransitionInfo {
+    from: ActivatedRouteSnapshot;
+    to: ActivatedRouteSnapshot;
+    transition: {
+        finished: Promise<void>;
+        ready: Promise<void>;
+        updateCallbackDone: Promise<void>;
+        skipTransition(): void;
+    };
+}
+
+// @public
 export type ViewTransitionsFeature = RouterFeature<RouterFeatureKind.ViewTransitionsFeature>;
+
+// @public
+export interface ViewTransitionsFeatureOptions {
+    onViewTransitionCreated?: (transitionInfo: ViewTransitionInfo) => void;
+    skipInitialTransition?: boolean;
+}
 
 // @public
 export function withComponentInputBinding(): ComponentInputBindingFeature;
@@ -1101,7 +1140,7 @@ export function withDisabledInitialNavigation(): DisabledInitialNavigationFeatur
 export function withEnabledBlockingInitialNavigation(): EnabledBlockingInitialNavigationFeature;
 
 // @public
-export function withHashLocation(): RouterConfigurationFeature;
+export function withHashLocation(): RouterHashLocationFeature;
 
 // @public
 export function withInMemoryScrolling(options?: InMemoryScrollingOptions): InMemoryScrollingFeature;

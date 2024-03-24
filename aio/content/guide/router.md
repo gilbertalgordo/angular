@@ -4,14 +4,14 @@ This topic describes how to implement many of the common tasks associated with a
 
 <a id="basics"></a>
 
-## Generate an application with routing enabled
+## Generate an application
 
 The following command uses the Angular CLI to generate a basic Angular application with application routes.
 The application name in the following example is `routing-app`.
 
 <code-example format="shell" language="shell">
 
-ng new routing-app --routing --defaults --standalone
+ng new routing-app
 
 </code-example>
 
@@ -22,7 +22,7 @@ To create a component using the CLI, enter the following at the command line whe
 
 <code-example format="shell" language="shell">
 
-ng generate component first --standalone
+ng generate component first
 
 </code-example>
 
@@ -31,7 +31,7 @@ Here, the new name is `second`.
 
 <code-example format="shell" language="shell">
 
-ng generate component second --standalone
+ng generate component second
 
 </code-example>
 
@@ -66,7 +66,7 @@ Import the routes into `app.config.ts` and add it to the `provideRouter` functio
 
 The Angular CLI performs this step for you.
 However, if you are creating an application manually or working with an existing, non-CLI application, verify that the imports and configuration are correct.
-The following is the default `ApplicationConfig` using the CLI with the `--routing` flag.
+The following is the default `ApplicationConfig` using the CLI.
 
 ```
 export const appConfig: ApplicationConfig = {
@@ -74,7 +74,7 @@ export const appConfig: ApplicationConfig = {
 };
 ```
 
-1.  Set up a `Routes` array for your routes 
+1.  Set up a `Routes` array for your routes
 
     The Angular CLI performs this step automatically.
 
@@ -184,7 +184,7 @@ The Angular router selects this route any time the requested URL doesn't match a
 To set up a wildcard route, add the following code to your `routes` definition.
 
 ```
-{ path: '**', component: &lt;component-name&gt; }
+{ path: '**', component: PageNotFoundComponent }
 ```
 
 The two asterisks, `**`, indicate to Angular that this `routes` definition is a wildcard route.
@@ -461,7 +461,7 @@ gotoItems(hero: Hero) {
 
 ## Lazy loading
 
-You can configure your routes to be lazy loaded, which means that Angular only loads routs as needed, rather than loading all routes when the application launches.
+You can configure your routes to be lazy loaded, which means that Angular only loads routes as needed, rather than loading all routes when the application launches.
 Additionally, preload parts of your application in the background to improve the user experience.
 
 For more information on lazy loading and preloading see the dedicated guide [Lazy loading](guide/lazy-loading-ngmodules).
@@ -725,4 +725,4 @@ When using `RouterModule.forRoot`, this is configured with the `useHash: true` i
 
 <!-- end links -->
 
-@reviewed 2023-08-29
+@reviewed 2023-10-24

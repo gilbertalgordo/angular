@@ -8,9 +8,11 @@
 
 import ts from 'typescript';
 
+import {absoluteFrom, getSourceFileOrError} from '../../file_system';
 import {initMockFileSystem} from '../../file_system/testing';
-import {TypeCheckingConfig} from '../api';
-import {ALL_ENABLED_CONFIG, tcb, TestDeclaration, TestDirective} from '../testing';
+import {Reference} from '../../imports';
+import {OptimizeFor, TypeCheckingConfig} from '../api';
+import {ALL_ENABLED_CONFIG, setup, tcb, TestDeclaration, TestDirective} from '../testing';
 
 
 describe('type check blocks', () => {
@@ -66,7 +68,7 @@ describe('type check blocks', () => {
       selector: '[dir]',
       inputs: {inputA: 'inputA'},
     }];
-    expect(tcb(TEMPLATE, DIRECTIVES)).toContain('_t1: i0.DirA = null!; _t1.inputA = ("value");');
+    expect(tcb(TEMPLATE, DIRECTIVES)).toContain('_t1 = null! as i0.DirA; _t1.inputA = ("value");');
   });
 
   it('should handle multiple bindings to the same property', () => {
@@ -274,7 +276,7 @@ describe('type check blocks', () => {
       }];
       expect(tcb(TEMPLATE, DIRECTIVES))
           .toContain(
-              'var _t1: typeof i0.Dir.ngAcceptInputType_fieldA = null!; ' +
+              'var _t1 = null! as typeof i0.Dir.ngAcceptInputType_fieldA; ' +
               '_t1 = (((this).foo));');
     });
   });
@@ -334,11 +336,11 @@ describe('type check blocks', () => {
       },
     ];
     const block = tcb(TEMPLATE, DIRECTIVES);
-    expect(block).toContain('var _t1: i0.HasInput = null!');
+    expect(block).toContain('var _t1 = null! as i0.HasInput');
     expect(block).toContain('_t1.input = (((this).value));');
-    expect(block).toContain('var _t2: i0.HasOutput = null!');
+    expect(block).toContain('var _t2 = null! as i0.HasOutput');
     expect(block).toContain('_t2["output"]');
-    expect(block).toContain('var _t4: i0.HasReference = null!');
+    expect(block).toContain('var _t4 = null! as i0.HasReference');
     expect(block).toContain('var _t3 = _t4;');
     expect(block).toContain('(_t3).a');
     expect(block).not.toContain('NoBindings');
@@ -368,7 +370,7 @@ describe('type check blocks', () => {
     }];
     expect(tcb(TEMPLATE, DIRECTIVES))
         .toContain(
-            'var _t2: i0.Dir = null!; ' +
+            'var _t2 = null! as i0.Dir; ' +
             'var _t1 = _t2; ' +
             '"" + (((_t1).value));');
   });
@@ -396,7 +398,7 @@ describe('type check blocks', () => {
       inputs: {'color': 'color', 'strong': 'strong', 'enabled': 'enabled'},
     }];
     const block = tcb(TEMPLATE, DIRECTIVES);
-    expect(block).not.toContain('var _t1: Dir = null!;');
+    expect(block).not.toContain('var _t1 = null! as Dir;');
     expect(block).not.toContain('"color"');
     expect(block).not.toContain('"strong"');
     expect(block).not.toContain('"enabled"');
@@ -416,7 +418,7 @@ describe('type check blocks', () => {
     }];
     expect(tcb(TEMPLATE, DIRECTIVES))
         .toContain(
-            'var _t2: i0.Dir = null!; ' +
+            'var _t2 = null! as i0.Dir; ' +
             'var _t1 = _t2; ' +
             '_t2.input = (_t1);');
   });
@@ -444,9 +446,9 @@ describe('type check blocks', () => {
     ];
     expect(tcb(TEMPLATE, DIRECTIVES))
         .toContain(
-            'var _t2: i0.DirB = null!; ' +
+            'var _t2 = null! as i0.DirB; ' +
             'var _t1 = _t2; ' +
-            'var _t3: i0.DirA = null!; ' +
+            'var _t3 = null! as i0.DirA; ' +
             '_t3.inputA = (_t1); ' +
             'var _t4 = _t3; ' +
             '_t2.inputA = (_t4);');
@@ -464,7 +466,7 @@ describe('type check blocks', () => {
       undeclaredInputFields: ['fieldA']
     }];
     const block = tcb(TEMPLATE, DIRECTIVES);
-    expect(block).not.toContain('var _t1: Dir = null!;');
+    expect(block).not.toContain('var _t1 = null! as Dir;');
     expect(block).toContain('(((this).foo)); ');
   });
 
@@ -481,8 +483,8 @@ describe('type check blocks', () => {
     }];
     expect(tcb(TEMPLATE, DIRECTIVES))
         .toContain(
-            'var _t1: i0.Dir = null!; ' +
-            'var _t2: (typeof _t1)["fieldA"] = null!; ' +
+            'var _t1 = null! as i0.Dir; ' +
+            'var _t2 = null! as (typeof _t1)["fieldA"]; ' +
             '_t2 = (((this).foo)); ');
   });
 
@@ -500,7 +502,7 @@ describe('type check blocks', () => {
        }];
        const block = tcb(TEMPLATE, DIRECTIVES);
        expect(block).toContain(
-           'var _t1: i0.Dir = null!; ' +
+           'var _t1 = null! as i0.Dir; ' +
            '_t1["some-input.xs"] = (((this).foo)); ');
      });
 
@@ -517,7 +519,7 @@ describe('type check blocks', () => {
     }];
     expect(tcb(TEMPLATE, DIRECTIVES))
         .toContain(
-            'var _t1: i0.Dir = null!; ' +
+            'var _t1 = null! as i0.Dir; ' +
             '_t1.field2 = _t1.field1 = (((this).foo));');
   });
 
@@ -536,8 +538,8 @@ describe('type check blocks', () => {
        }];
        expect(tcb(TEMPLATE, DIRECTIVES))
            .toContain(
-               'var _t1: typeof i0.Dir.ngAcceptInputType_field1 = null!; ' +
-               'var _t2: i0.Dir = null!; ' +
+               'var _t1 = null! as typeof i0.Dir.ngAcceptInputType_field1; ' +
+               'var _t2 = null! as i0.Dir; ' +
                '_t2.field2 = _t1 = (((this).foo));');
      });
 
@@ -556,7 +558,7 @@ describe('type check blocks', () => {
        }];
        expect(tcb(TEMPLATE, DIRECTIVES))
            .toContain(
-               'var _t1: i0.Dir = null!; ' +
+               'var _t1 = null! as i0.Dir; ' +
                '_t1.field2 = (((this).foo));');
      });
 
@@ -572,9 +574,9 @@ describe('type check blocks', () => {
       coercedInputFields: ['fieldA'],
     }];
     const block = tcb(TEMPLATE, DIRECTIVES);
-    expect(block).not.toContain('var _t1: Dir = null!;');
+    expect(block).not.toContain('var _t1 = null! as Dir;');
     expect(block).toContain(
-        'var _t1: typeof i0.Dir.ngAcceptInputType_fieldA = null!; ' +
+        'var _t1 = null! as typeof i0.Dir.ngAcceptInputType_fieldA; ' +
         '_t1 = (((this).foo));');
   });
 
@@ -591,9 +593,9 @@ describe('type check blocks', () => {
       undeclaredInputFields: ['fieldA'],
     }];
     const block = tcb(TEMPLATE, DIRECTIVES);
-    expect(block).not.toContain('var _t1: Dir = null!;');
+    expect(block).not.toContain('var _t1 = null! as Dir;');
     expect(block).toContain(
-        'var _t1: typeof i0.Dir.ngAcceptInputType_fieldA = null!; ' +
+        'var _t1 = null! as typeof i0.Dir.ngAcceptInputType_fieldA; ' +
         '_t1 = (((this).foo));');
   });
 
@@ -608,13 +610,14 @@ describe('type check blocks', () => {
           bindingPropertyName: 'fieldA',
           classPropertyName: 'fieldA',
           required: false,
+          isSignal: false,
           transform: {
             node: ts.factory.createFunctionDeclaration(
                 undefined, undefined, undefined, undefined, [], undefined, undefined),
-            type: ts.factory.createUnionTypeNode([
+            type: new Reference(ts.factory.createUnionTypeNode([
               ts.factory.createKeywordTypeNode(ts.SyntaxKind.BooleanKeyword),
               ts.factory.createKeywordTypeNode(ts.SyntaxKind.StringKeyword),
-            ])
+            ]))
           },
         },
       },
@@ -624,7 +627,7 @@ describe('type check blocks', () => {
     const block = tcb(TEMPLATE, DIRECTIVES);
 
     expect(block).toContain(
-        'var _t1: boolean | string = null!; ' +
+        'var _t1 = null! as boolean | string; ' +
         '_t1 = (((this).expr));');
   });
 
@@ -644,6 +647,91 @@ describe('type check blocks', () => {
     const TEMPLATE = `{{foo.$any(a)}}`;
     const block = tcb(TEMPLATE);
     expect(block).toContain('((((this).foo)).$any(((this).a)))');
+  });
+
+  it('should handle a two-way binding to an input/output pair', () => {
+    const TEMPLATE = `<div twoWay [(input)]="value"></div>`;
+    const DIRECTIVES: TestDeclaration[] = [{
+      type: 'directive',
+      name: 'TwoWay',
+      selector: '[twoWay]',
+      inputs: {input: 'input'},
+      outputs: {inputChange: 'inputChange'},
+    }];
+    const block = tcb(TEMPLATE, DIRECTIVES);
+    expect(block).toContain('var _t1 = null! as i0.TwoWay;');
+    expect(block).toContain('_t1.input = i1.ɵunwrapWritableSignal((((this).value)));');
+  });
+
+  it('should handle a two-way binding to an input/output pair of a generic directive', () => {
+    const TEMPLATE = `<div twoWay [(input)]="value"></div>`;
+    const DIRECTIVES: TestDeclaration[] = [{
+      type: 'directive',
+      name: 'TwoWay',
+      selector: '[twoWay]',
+      inputs: {input: 'input'},
+      outputs: {inputChange: 'inputChange'},
+      isGeneric: true,
+    }];
+    const block = tcb(TEMPLATE, DIRECTIVES);
+    expect(block).toContain(
+        'const _ctor1: <T extends string = any>(init: Pick<i0.TwoWay<T>, "input">) => i0.TwoWay<T> = null!');
+    expect(block).toContain(
+        'var _t1 = _ctor1({ "input": (i1.ɵunwrapWritableSignal(((this).value))) });');
+    expect(block).toContain('_t1.input = i1.ɵunwrapWritableSignal((((this).value)));');
+  });
+
+  it('should handle a two-way binding to a model()', () => {
+    const TEMPLATE = `<div twoWay [(input)]="value"></div>`;
+    const DIRECTIVES: TestDeclaration[] = [{
+      type: 'directive',
+      name: 'TwoWay',
+      selector: '[twoWay]',
+      inputs: {
+        input: {
+          classPropertyName: 'input',
+          bindingPropertyName: 'input',
+          required: false,
+          isSignal: true,
+          transform: null,
+        }
+      },
+      outputs: {inputChange: 'inputChange'},
+    }];
+    const block = tcb(TEMPLATE, DIRECTIVES);
+    expect(block).toContain('var _t1 = null! as i0.TwoWay;');
+    expect(block).toContain(
+        '_t1.input[i1.ɵINPUT_SIGNAL_BRAND_WRITE_TYPE] = i1.ɵunwrapWritableSignal((((this).value)));');
+  });
+
+  it('should handle a two-way binding to an input with a transform', () => {
+    const TEMPLATE = `<div twoWay [(input)]="value"></div>`;
+    const DIRECTIVES: TestDeclaration[] = [{
+      type: 'directive',
+      name: 'TwoWay',
+      selector: '[twoWay]',
+      inputs: {
+        input: {
+          classPropertyName: 'input',
+          bindingPropertyName: 'input',
+          required: false,
+          isSignal: false,
+          transform: {
+            node: ts.factory.createFunctionDeclaration(
+                undefined, undefined, undefined, undefined, [], undefined, undefined),
+            type: new Reference(ts.factory.createUnionTypeNode([
+              ts.factory.createKeywordTypeNode(ts.SyntaxKind.BooleanKeyword),
+              ts.factory.createKeywordTypeNode(ts.SyntaxKind.StringKeyword),
+            ]))
+          },
+        }
+      },
+      outputs: {inputChange: 'inputChange'},
+      coercedInputFields: ['input'],
+    }];
+    const block = tcb(TEMPLATE, DIRECTIVES);
+    expect(block).toContain('var _t1 = null! as boolean | string;');
+    expect(block).toContain('_t1 = i1.ɵunwrapWritableSignal((((this).value)));');
   });
 
   describe('experimental DOM checking via lib.dom.d.ts', () => {
@@ -786,6 +874,8 @@ describe('type check blocks', () => {
       enableTemplateTypeChecker: false,
       useInlineTypeConstructors: true,
       suggestionsForSuboptimalTypeInference: false,
+      controlFlowPreventingContentProjection: 'warning',
+      allowSignalsInTwoWayBindings: true,
     };
 
     describe('config.applyTemplateContextGuards', () => {
@@ -1017,13 +1107,13 @@ describe('type check blocks', () => {
 
       it('should check types of pipes when enabled', () => {
         const block = tcb(TEMPLATE, PIPES);
-        expect(block).toContain('var _pipe1: i0.TestPipe = null!;');
+        expect(block).toContain('var _pipe1 = null! as i0.TestPipe;');
         expect(block).toContain('(_pipe1.transform(((this).a), ((this).b), ((this).c)));');
       });
       it('should not check types of pipes when disabled', () => {
         const DISABLED_CONFIG: TypeCheckingConfig = {...BASE_CONFIG, checkTypeOfPipes: false};
         const block = tcb(TEMPLATE, PIPES, DISABLED_CONFIG);
-        expect(block).toContain('var _pipe1: i0.TestPipe = null!;');
+        expect(block).toContain('var _pipe1 = null! as i0.TestPipe;');
         expect(block).toContain('((_pipe1.transform as any)(((this).a), ((this).b), ((this).c))');
       });
     });
@@ -1107,7 +1197,7 @@ describe('type check blocks', () => {
                TypeCheckingConfig = {...BASE_CONFIG, honorAccessModifiersForInputBindings: true};
            const block = tcb(TEMPLATE, DIRECTIVES, enableChecks);
            expect(block).toContain(
-               'var _t1: i0.Dir = null!; ' +
+               'var _t1 = null! as i0.Dir; ' +
                '_t1["some-input.xs"] = (((this).foo)); ');
          });
 
@@ -1125,8 +1215,39 @@ describe('type check blocks', () => {
             TypeCheckingConfig = {...BASE_CONFIG, honorAccessModifiersForInputBindings: true};
         const block = tcb(TEMPLATE, DIRECTIVES, enableChecks);
         expect(block).toContain(
-            'var _t1: i0.Dir = null!; ' +
+            'var _t1 = null! as i0.Dir; ' +
             '_t1.fieldA = (((this).foo)); ');
+      });
+    });
+
+    describe('config.allowSignalsInTwoWayBindings', () => {
+      it('should not unwrap signals in two-way binding expressions', () => {
+        const TEMPLATE = `<div twoWay [(input)]="value"></div>`;
+        const DIRECTIVES: TestDeclaration[] = [{
+          type: 'directive',
+          name: 'TwoWay',
+          selector: '[twoWay]',
+          inputs: {input: 'input'},
+          outputs: {inputChange: 'inputChange'},
+        }];
+        const block =
+            tcb(TEMPLATE, DIRECTIVES, {...BASE_CONFIG, allowSignalsInTwoWayBindings: false});
+        expect(block).not.toContain('ɵunwrapWritableSignal');
+      });
+
+      it('should not unwrap signals in two-way bindings to generic directives', () => {
+        const TEMPLATE = `<div twoWay [(input)]="value"></div>`;
+        const DIRECTIVES: TestDeclaration[] = [{
+          type: 'directive',
+          name: 'TwoWay',
+          selector: '[twoWay]',
+          inputs: {input: 'input'},
+          outputs: {inputChange: 'inputChange'},
+          isGeneric: true,
+        }];
+        const block =
+            tcb(TEMPLATE, DIRECTIVES, {...BASE_CONFIG, allowSignalsInTwoWayBindings: false});
+        expect(block).not.toContain('ɵunwrapWritableSignal');
       });
     });
   });
@@ -1157,7 +1278,7 @@ describe('type check blocks', () => {
 
        const renderedTcb = tcb(template, declarations, {useInlineTypeConstructors: false});
 
-       expect(renderedTcb).toContain(`var _t1: i0.Dir<any, any> = null!;`);
+       expect(renderedTcb).toContain(`var _t1 = null! as i0.Dir<any, any>;`);
        expect(renderedTcb).toContain(`_t1.inputA = (((this).foo));`);
        expect(renderedTcb).toContain(`_t1.inputB = (((this).bar));`);
      });
@@ -1183,7 +1304,7 @@ describe('type check blocks', () => {
         }]
       }];
       const block = tcb(TEMPLATE, DIRECTIVES);
-      expect(block).toContain('var _t1: i0.HostDir = null!');
+      expect(block).toContain('var _t1 = null! as i0.HostDir');
       expect(block).toContain('_t1.hostInput = (1)');
       expect(block).toContain('_t1["hostOutput"].subscribe');
     });
@@ -1208,7 +1329,7 @@ describe('type check blocks', () => {
         }]
       }];
       const block = tcb(TEMPLATE, DIRECTIVES);
-      expect(block).toContain('var _t1: i0.HostDir = null!');
+      expect(block).toContain('var _t1 = null! as i0.HostDir');
       expect(block).toContain('_t1.hostInput = (1)');
       expect(block).toContain('_t1["hostOutput"].subscribe');
     });
@@ -1239,7 +1360,7 @@ describe('type check blocks', () => {
         }]
       }];
       const block = tcb(TEMPLATE, DIRECTIVES);
-      expect(block).toContain('var _t1: i0.MultiLevelHostDir = null!;');
+      expect(block).toContain('var _t1 = null! as i0.MultiLevelHostDir;');
       expect(block).toContain('_t1.multiLevelHostInput = (1)');
     });
 
@@ -1271,8 +1392,8 @@ describe('type check blocks', () => {
         ]
       }];
       const block = tcb(TEMPLATE, DIRECTIVES);
-      expect(block).toContain('var _t2: i0.HostA = null!;');
-      expect(block).toContain('var _t4: i0.HostB = null!;');
+      expect(block).toContain('var _t2 = null! as i0.HostA;');
+      expect(block).toContain('var _t4 = null! as i0.HostB;');
       expect(block).toContain('(((_t1).propA)) + (((_t3).propB))');
     });
 
@@ -1295,8 +1416,8 @@ describe('type check blocks', () => {
         }]
       }];
       const block = tcb(TEMPLATE, DIRECTIVES);
-      expect(block).toContain('var _t1: i0.HostDir = null!');
-      expect(block).toContain('var _t2: i0.DirA = null!;');
+      expect(block).toContain('var _t1 = null! as i0.HostDir');
+      expect(block).toContain('var _t2 = null! as i0.DirA;');
       expect(block).toContain('_t1.input = (1)');
       expect(block).toContain('_t2.input = (1)');
     });
@@ -1323,7 +1444,7 @@ describe('type check blocks', () => {
            }]
          }];
          const block = tcb(TEMPLATE, DIRECTIVES);
-         expect(block).not.toContain('var _t1: i0.HostDir = null!');
+         expect(block).not.toContain('var _t1 = null! i0.HostDir');
          expect(block).not.toContain('_t1.hostInput = (1)');
          expect(block).not.toContain('_t1["hostOutput"].subscribe');
          expect(block).toContain('_t1.addEventListener("hostOutput"');
@@ -1350,70 +1471,67 @@ describe('type check blocks', () => {
            }]
          }];
          const block = tcb(TEMPLATE, DIRECTIVES);
-         expect(block).toContain('var _t1: i0.HostDir = null!');
+         expect(block).toContain('var _t1 = null! as i0.HostDir');
          expect(block).toContain('_t1.hostInput = (1)');
          expect(block).toContain('_t1["hostOutput"].subscribe');
        });
   });
 
   describe('deferred blocks', () => {
-    // TODO(crisbeto): temporary utility while deferred blocks are disabled by default
-    function deferredTcb(template: string): string {
-      return tcb(
-          template, undefined, undefined, undefined, {enabledBlockTypes: new Set(['defer'])});
-    }
-
     it('should generate bindings inside deferred blocks', () => {
       const TEMPLATE = `
-        {#defer}
+        @defer {
           {{main()}}
-          {:placeholder}{{placeholder()}}
-          {:loading}{{loading()}}
-          {:error}{{error()}}
-        {/defer}
+        } @placeholder {
+          {{placeholder()}}
+        } @loading {
+          {{loading()}}
+        } @error {
+          {{error()}}
+        }
       `;
 
-      expect(deferredTcb(TEMPLATE))
+      expect(tcb(TEMPLATE))
           .toContain(
               '"" + ((this).main()); "" + ((this).placeholder()); "" + ((this).loading()); "" + ((this).error());');
     });
 
     it('should generate `when` trigger', () => {
       const TEMPLATE = `
-        {#defer when shouldShow() && isVisible}{{main()}}{/defer}
+        @defer (when shouldShow() && isVisible) {
+          {{main()}}
+        }
       `;
 
-      expect(deferredTcb(TEMPLATE)).toContain('((this).shouldShow()) && (((this).isVisible));');
+      expect(tcb(TEMPLATE)).toContain('((this).shouldShow()) && (((this).isVisible));');
     });
 
     it('should generate `prefetch when` trigger', () => {
       const TEMPLATE = `
-        {#defer prefetch when shouldShow() && isVisible}{{main()}}{/defer}
+        @defer (prefetch when shouldShow() && isVisible) {
+          {{main()}}
+        }
       `;
 
-      expect(deferredTcb(TEMPLATE)).toContain('((this).shouldShow()) && (((this).isVisible));');
+      expect(tcb(TEMPLATE)).toContain('((this).shouldShow()) && (((this).isVisible));');
     });
   });
 
   describe('conditional blocks', () => {
-    // TODO(crisbeto): temporary utility while conditional blocks are disabled by default
-    function conditionalTcb(template: string): string {
-      return tcb(
-          template, undefined, undefined, undefined,
-          {enabledBlockTypes: new Set(['if', 'switch'])});
-    }
-
     it('should generate an if block', () => {
       const TEMPLATE = `
-        {#if expr === 0}
+        @if (expr === 0) {
           {{main()}}
-          {:else if expr1 === 1}{{one()}}
-          {:else if expr2 === 2}{{two()}}
-          {:else}{{other()}}
-        {/if}
+        } @else if (expr1 === 1) {
+          {{one()}}
+        } @else if (expr2 === 2) {
+          {{two()}}
+        } @else {
+          {{other()}}
+        }
       `;
 
-      expect(conditionalTcb(TEMPLATE))
+      expect(tcb(TEMPLATE))
           .toContain(
               'if ((((this).expr)) === (0)) { "" + ((this).main()); } ' +
               'else if ((((this).expr1)) === (1)) { "" + ((this).one()); } ' +
@@ -1421,142 +1539,262 @@ describe('type check blocks', () => {
               'else { "" + ((this).other()); }');
     });
 
-    it('should generate an if block with an `as` expression', () => {
-      const TEMPLATE = `{#if expr === 1; as alias}{{alias}}{/if}`;
+    it('should generate a guard expression for listener inside conditional', () => {
+      const TEMPLATE = `
+        @if (expr === 0) {
+          <button (click)="zero()"></button>
+        } @else if (expr === 1) {
+          <button (click)="one()"></button>
+        } @else if (expr === 2) {
+          <button (click)="two()"></button>
+        } @else {
+          <button (click)="otherwise()"></button>
+        }
+      `;
 
-      expect(conditionalTcb(TEMPLATE))
-          .toContain(
-              'if ((((this).expr)) === (1)) { var _t1 = (((this).expr)) === (1); "" + (_t1); }');
+      const result = tcb(TEMPLATE);
+
+      expect(result).toContain(`if ((((this).expr)) === (0)) (this).zero();`);
+      expect(result).toContain(
+          `if (!((((this).expr)) === (0)) && (((this).expr)) === (1)) (this).one();`);
+      expect(result).toContain(
+          `if (!((((this).expr)) === (0)) && !((((this).expr)) === (1)) && (((this).expr)) === (2)) (this).two();`);
+      expect(result).toContain(
+          `if (!((((this).expr)) === (0)) && !((((this).expr)) === (1)) && !((((this).expr)) === (2))) (this).otherwise();`);
+    });
+
+    it('should generate an if block with an `as` expression', () => {
+      const TEMPLATE = `@if (expr === 1; as alias) {
+        {{alias}}
+      }`;
+
+      expect(tcb(TEMPLATE))
+          .toContain('var _t1 = ((((this).expr)) === (1)); if (_t1) { "" + (_t1); } } }');
     });
 
     it('should generate a switch block', () => {
       const TEMPLATE = `
-        {#switch expr}
-          {:case 1}{{one()}}
-          {:case 2}{{two()}}
-          {:default}{{default()}}
-        {/switch}
+        @switch (expr) {
+          @case (1) {
+            {{one()}}
+          }
+          @case (2) {
+            {{two()}}
+          }
+          @default {
+            {{default()}}
+          }
+        }
       `;
 
-      expect(conditionalTcb(TEMPLATE))
+      expect(tcb(TEMPLATE))
           .toContain(
-              'switch (((this).expr)) { case 1: "" + ((this).one()); break; ' +
-              'case 2: "" + ((this).two()); break; default: "" + ((this).default()); break; }');
+              'if ((((this).expr)) === 1) { "" + ((this).one()); } else if ' +
+              '((((this).expr)) === 2) { "" + ((this).two()); } else { "" + ((this).default()); }');
+    });
+
+    it('should generate a switch block that only has a default case', () => {
+      const TEMPLATE = `
+        @switch (expr) {
+          @default {
+            {{default()}}
+          }
+        }
+      `;
+
+      expect(tcb(TEMPLATE)).toContain('{ "" + ((this).default()); }');
+    });
+
+    it('should generate a guard expression for a listener inside a switch case', () => {
+      const TEMPLATE = `
+        @switch (expr) {
+          @case (1) {
+            <button (click)="one()"></button>
+          }
+          @case (2) {
+            <button (click)="two()"></button>
+          }
+          @default {
+            <button (click)="default()"></button>
+          }
+        }
+      `;
+
+      const result = tcb(TEMPLATE);
+
+      expect(result).toContain(`if ((((this).expr)) === 1) (this).one();`);
+      expect(result).toContain(`if ((((this).expr)) === 2) (this).two();`);
+      expect(result).toContain(
+          `if ((((this).expr)) !== 1 && (((this).expr)) !== 2) (this).default();`);
     });
 
     it('should generate a switch block inside a template', () => {
       const TEMPLATE = `
         <ng-template let-expr="exp">
-          {#switch expr()}
-            {:case 'one'}{{one()}}
-            {:case 'two'}{{two()}}
-            {:default}{{default()}}
-          {/switch}
+          @switch (expr()) {
+            @case ('one') {
+              {{one()}}
+            }
+            @case ('two') {
+              {{two()}}
+            }
+            @default {
+              {{default()}}
+            }
+          }
         </ng-template>
       `;
 
-      expect(conditionalTcb(TEMPLATE))
+      expect(tcb(TEMPLATE))
           .toContain(
-              'var _t1: any = null!; { var _t2 = (_t1.exp); switch (_t2()) { ' +
-              'case "one": "" + ((this).one()); break; case "two": "" + ((this).two()); break; ' +
-              'default: "" + ((this).default()); break; } } ');
+              'var _t1 = null! as any; { var _t2 = (_t1.exp); _t2(); ' +
+              'if ((_t2()) === "one") { "" + ((this).one()); } ' +
+              'else if ((_t2()) === "two") { "" + ((this).two()); } ' +
+              'else { "" + ((this).default()); } }');
+    });
+
+    it('should handle an empty switch block', () => {
+      expect(tcb('@switch (expr) {}')).toContain('if (true) { ((this).expr); }');
     });
   });
 
-  // TODO(crisbeto): tests for the tracking function.
   describe('for loop blocks', () => {
-    // TODO(crisbeto): temporary utility while for loop blocks are disabled by default
-    function loopTcb(template: string): string {
-      return tcb(template, undefined, undefined, undefined, {enabledBlockTypes: new Set(['for'])});
-    }
-
     it('should generate a for block', () => {
       const TEMPLATE = `
-        {#for item of items; track item}
+        @for (item of items; track item) {
           {{main(item)}}
-          {:empty}{{empty()}}
-        {/for}
+        } @empty {
+          {{empty()}}
+        }
       `;
 
-      const result = loopTcb(TEMPLATE);
-      expect(result).toContain('for (const item of ((this).items)) { var _t1 = item;');
+      const result = tcb(TEMPLATE);
+      expect(result).toContain('for (const _t1 of ((this).items)!) {');
       expect(result).toContain('"" + ((this).main(_t1))');
       expect(result).toContain('"" + ((this).empty())');
     });
 
     it('should generate a for block with implicit variables', () => {
       const TEMPLATE = `
-        {#for item of items; track item}
+        @for (item of items; track item) {
           {{$index}} {{$first}} {{$last}} {{$even}} {{$odd}} {{$count}}
-        {/for}
+        }
       `;
 
-      const result = loopTcb(TEMPLATE);
-      expect(result).toContain('for (const item of ((this).items)) { var _t1 = item;');
-      expect(result).toContain('var _t2: number = null!;');
-      expect(result).toContain('var _t3: number = null!;');
-      expect(result).toContain('var _t4: number = null!;');
-      expect(result).toContain('var _t5: number = null!;');
-      expect(result).toContain('var _t6: number = null!;');
-      expect(result).toContain('var _t7: number = null!;');
+      const result = tcb(TEMPLATE);
+      expect(result).toContain('for (const _t1 of ((this).items)!) {');
+      expect(result).toContain('var _t2 = null! as number;');
+      expect(result).toContain('var _t3 = null! as boolean;');
+      expect(result).toContain('var _t4 = null! as boolean;');
+      expect(result).toContain('var _t5 = null! as boolean;');
+      expect(result).toContain('var _t6 = null! as boolean;');
+      expect(result).toContain('var _t7 = null! as number;');
       expect(result).toContain('"" + (_t2) + (_t3) + (_t4) + (_t5) + (_t6) + (_t7)');
     });
 
     it('should generate a for block with aliased variables', () => {
       const TEMPLATE = `
-        {#for item of items; track item; let i = $index, f = $first, l = $last, e = $even, o = $odd, c = $count}
+        @for (item of items; track item; let i = $index, f = $first, l = $last, e = $even, o = $odd, c = $count) {
           {{i}} {{f}} {{l}} {{e}} {{o}} {{c}}
-        {/for}
+        }
       `;
 
-      const result = loopTcb(TEMPLATE);
-      expect(result).toContain('for (const item of ((this).items)) { var _t1 = item;');
-      expect(result).toContain('var _t2: number = null!;');
-      expect(result).toContain('var _t3: number = null!;');
-      expect(result).toContain('var _t4: number = null!;');
-      expect(result).toContain('var _t5: number = null!;');
-      expect(result).toContain('var _t6: number = null!;');
-      expect(result).toContain('var _t7: number = null!;');
+      const result = tcb(TEMPLATE);
+      expect(result).toContain('for (const _t1 of ((this).items)!) {');
+      expect(result).toContain('var _t2 = null! as number;');
+      expect(result).toContain('var _t3 = null! as boolean;');
+      expect(result).toContain('var _t4 = null! as boolean;');
+      expect(result).toContain('var _t5 = null! as boolean;');
+      expect(result).toContain('var _t6 = null! as boolean;');
+      expect(result).toContain('var _t7 = null! as number;');
       expect(result).toContain('"" + (_t2) + (_t3) + (_t4) + (_t5) + (_t6) + (_t7)');
     });
 
-    it('should read an implicit variable from the component scope if it is aliased', () => {
+    it('should read both implicit variables and their alias at the same time', () => {
       const TEMPLATE = `
-        {#for item of items; track item; let i = $index} {{$index}} {{i}} {/for}
+        @for (item of items; track item; let i = $index) { {{$index}} {{i}} }
       `;
 
-      const result = loopTcb(TEMPLATE);
-      expect(result).toContain('for (const item of ((this).items)) { var _t1 = item;');
-      expect(result).toContain('var _t2: number = null!;');
-      expect(result).toContain('"" + (((this).$index)) + (_t2)');
+      const result = tcb(TEMPLATE);
+      expect(result).toContain('for (const _t1 of ((this).items)!) {');
+      expect(result).toContain('var _t2 = null! as number;');
+      expect(result).toContain('var _t3 = null! as number;');
+      expect(result).toContain('"" + (_t2) + (_t3)');
     });
 
     it('should read variable from a parent for loop', () => {
       const TEMPLATE = `
-        {#for item of items; track item; let indexAlias = $index}
+        @for (item of items; track item; let indexAlias = $index) {
           {{item}} {{indexAlias}}
 
-          {#for inner of item.items; track inner}
+          @for (inner of item.items; track inner) {
             {{item}} {{indexAlias}} {{inner}} {{$index}}
-          {/for}
-        {/for}
+          }
+        }
       `;
 
-      const result = loopTcb(TEMPLATE);
-      expect(result).toContain(
-          'for (const item of ((this).items)) { var _t1 = item; var _t2: number = null!;');
+      const result = tcb(TEMPLATE);
+      expect(result).toContain('for (const _t1 of ((this).items)!) { var _t2 = null! as number;');
       expect(result).toContain('"" + (_t1) + (_t2)');
-      expect(result).toContain(
-          'for (const inner of ((_t1).items)) { var _t8 = inner; var _t9: number = null!;');
-      expect(result).toContain('"" + (_t1) + (_t2) + (_t8) + (_t9)');
+      expect(result).toContain('for (const _t3 of ((_t1).items)!) { var _t4 = null! as number;');
+      expect(result).toContain('"" + (_t1) + (_t2) + (_t3) + (_t4)');
     });
 
     it('should generate the tracking expression of a for loop', () => {
-      const result = loopTcb(`{#for item of items; track trackingFn($index, item, prop)}{/for}`);
+      const result = tcb(`@for (item of items; track trackingFn($index, item, prop)) {}`);
+      expect(result).toContain('for (const _t1 of ((this).items)!) { var _t2 = null! as number;');
+      expect(result).toContain('(this).trackingFn(_t2, _t1, ((this).prop));');
+    });
+  });
 
-      expect(result).toContain(
-          'for (const item of ((this).items)) { var _t1: number = null!; var _t2 = item;');
-      expect(result).toContain('(this).trackingFn(_t1, _t2, ((this).prop));');
+  describe('import generation', () => {
+    const TEMPLATE = `<div dir [test]="null"></div>`;
+    const DIRECTIVE: TestDeclaration = {
+      type: 'directive',
+      name: 'Dir',
+      selector: '[dir]',
+      inputs: {
+        test: {
+          isSignal: true,
+          bindingPropertyName: 'test',
+          classPropertyName: 'test',
+          required: true,
+          transform: null,
+        }
+      }
+    };
+
+    it('should prefer namespace imports in type check files for new imports', () => {
+      const result = tcb(TEMPLATE, [DIRECTIVE]);
+
+      expect(result).toContain(`import * as i1 from '@angular/core';`);
+      expect(result).toContain(`[i1.ɵINPUT_SIGNAL_BRAND_WRITE_TYPE]`);
+    });
+
+    it('should re-use existing imports from original source files', () => {
+      // This is especially important for inline type check blocks.
+      // See: https://github.com/angular/angular/pull/53521#pullrequestreview-1778130879.
+      const {templateTypeChecker, program, programStrategy} = setup([{
+        fileName: absoluteFrom('/test.ts'),
+        templates: {'AppComponent': TEMPLATE},
+        declarations: [DIRECTIVE],
+        source: `
+          import {Component} from '@angular/core'; // should be re-used
+
+          class AppComponent {}
+          export class Dir {}
+        `,
+      }]);
+
+      // Trigger type check block generation.
+      templateTypeChecker.getDiagnosticsForFile(
+          getSourceFileOrError(program, absoluteFrom('/test.ts')), OptimizeFor.SingleFile);
+
+      const testSf = getSourceFileOrError(programStrategy.getProgram(), absoluteFrom('/test.ts'));
+      expect(testSf.text)
+          .toContain(
+              `import { Component, ɵINPUT_SIGNAL_BRAND_WRITE_TYPE } from '@angular/core'; // should be re-used`);
+      expect(testSf.text).toContain(`[ɵINPUT_SIGNAL_BRAND_WRITE_TYPE]`);
     });
   });
 });

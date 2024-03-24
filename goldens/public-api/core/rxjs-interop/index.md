@@ -8,8 +8,16 @@ import { DestroyRef } from '@angular/core';
 import { Injector } from '@angular/core';
 import { MonoTypeOperatorFunction } from 'rxjs';
 import { Observable } from 'rxjs';
+import { OutputOptions } from '@angular/core';
+import { OutputRef } from '@angular/core';
 import { Signal } from '@angular/core';
 import { Subscribable } from 'rxjs';
+
+// @public
+export function outputFromObservable<T>(observable: Observable<T>, opts?: OutputOptions): OutputRef<T>;
+
+// @public
+export function outputToObservable<T>(ref: OutputRef<T>): Observable<T>;
 
 // @public
 export function takeUntilDestroyed<T>(destroyRef?: DestroyRef): MonoTypeOperatorFunction<T>;
@@ -22,30 +30,39 @@ export interface ToObservableOptions {
     injector?: Injector;
 }
 
-// @public
+// @public (undocumented)
 export function toSignal<T>(source: Observable<T> | Subscribable<T>): Signal<T | undefined>;
 
-// @public
-export function toSignal<T>(source: Observable<T> | Subscribable<T>, options?: ToSignalOptions<undefined> & {
+// @public (undocumented)
+export function toSignal<T>(source: Observable<T> | Subscribable<T>, options: ToSignalOptions & {
+    initialValue?: undefined;
     requireSync?: false;
 }): Signal<T | undefined>;
 
-// @public
-export function toSignal<T, U extends T | null | undefined>(source: Observable<T> | Subscribable<T>, options: ToSignalOptions<U> & {
+// @public (undocumented)
+export function toSignal<T>(source: Observable<T> | Subscribable<T>, options: ToSignalOptions & {
+    initialValue?: null;
+    requireSync?: false;
+}): Signal<T | null>;
+
+// @public (undocumented)
+export function toSignal<T>(source: Observable<T> | Subscribable<T>, options: ToSignalOptions & {
+    initialValue?: undefined;
+    requireSync: true;
+}): Signal<T>;
+
+// @public (undocumented)
+export function toSignal<T, const U extends T>(source: Observable<T> | Subscribable<T>, options: ToSignalOptions & {
     initialValue: U;
     requireSync?: false;
 }): Signal<T | U>;
 
 // @public
-export function toSignal<T>(source: Observable<T> | Subscribable<T>, options: ToSignalOptions<undefined> & {
-    requireSync: true;
-}): Signal<T>;
-
-// @public
-export interface ToSignalOptions<T> {
-    initialValue?: T;
+export interface ToSignalOptions {
+    initialValue?: unknown;
     injector?: Injector;
     manualCleanup?: boolean;
+    rejectErrors?: boolean;
     requireSync?: boolean;
 }
 

@@ -23,17 +23,18 @@ import {resolveForwardRef} from './forward_ref';
 import {ENVIRONMENT_INITIALIZER} from './initializer_token';
 import {setInjectImplementation} from './inject_switch';
 import {InjectionToken} from './injection_token';
-import {Injector} from './injector';
+import type {Injector} from './injector';
 import {catchInjectorError, convertToBitFlags, injectArgs, NG_TEMP_TOKEN_PATH, setCurrentInjector, THROW_IF_NOT_FOUND, ɵɵinject} from './injector_compatibility';
 import {INJECTOR} from './injector_token';
 import {getInheritedInjectableDef, getInjectableDef, InjectorType, ɵɵInjectableDeclaration} from './interface/defs';
 import {InjectFlags, InjectOptions} from './interface/injector';
-import {ClassProvider, ConstructorProvider, EnvironmentProviders, InternalEnvironmentProviders, isEnvironmentProviders, Provider, StaticClassProvider} from './interface/provider';
+import {ClassProvider, ConstructorProvider, EnvironmentProviders, InternalEnvironmentProviders, isEnvironmentProviders, Provider, StaticClassProvider, TypeProvider} from './interface/provider';
 import {INJECTOR_DEF_TYPES} from './internal_tokens';
 import {NullInjector} from './null_injector';
 import {isExistingProvider, isFactoryProvider, isTypeProvider, isValueProvider, SingleProvider} from './provider_collection';
 import {ProviderToken} from './provider_token';
 import {INJECTOR_SCOPE, InjectorScope} from './scope';
+import {setActiveConsumer} from '@angular/core/primitives/signals';
 
 /**
  * Marker which indicates that a value has not yet been created from the factory function.
@@ -194,6 +195,7 @@ export class R3Injector extends EnvironmentInjector {
 
     // Set destroyed = true first, in case lifecycle hooks re-enter destroy().
     this._destroyed = true;
+    const prevConsumer = setActiveConsumer(null);
     try {
       // Call all the lifecycle hooks.
       for (const service of this._ngOnDestroyHooks) {
@@ -211,6 +213,7 @@ export class R3Injector extends EnvironmentInjector {
       this.records.clear();
       this._ngOnDestroyHooks.clear();
       this.injectorDefTypes.clear();
+      setActiveConsumer(prevConsumer);
     }
   }
 
@@ -270,6 +273,13 @@ export class R3Injector extends EnvironmentInjector {
           if (def && this.injectableDefInScope(def)) {
             // Found an injectable def and it's scoped to this injector. Pretend as if it was here
             // all along.
+
+            if (ngDevMode) {
+              runInInjectorProfilerContext(this, token as Type<T>, () => {
+                emitProviderConfiguredEvent(token as TypeProvider);
+              });
+            }
+
             record = makeRecord(injectableDefOrInjectorDefFactory(token), NOT_YET);
           } else {
             record = null;
@@ -315,6 +325,7 @@ export class R3Injector extends EnvironmentInjector {
 
   /** @internal */
   resolveInjectorInitializers() {
+    const prevConsumer = setActiveConsumer(null);
     const previousInjector = setCurrentInjector(this);
     const previousInjectImplementation = setInjectImplementation(undefined);
     let prevInjectContext: InjectorProfilerContext|undefined;
@@ -339,6 +350,7 @@ export class R3Injector extends EnvironmentInjector {
       setCurrentInjector(previousInjector);
       setInjectImplementation(previousInjectImplementation);
       ngDevMode && setInjectorProfilerContext(prevInjectContext!);
+      setActiveConsumer(prevConsumer);
     }
   }
 
@@ -401,33 +413,40 @@ export class R3Injector extends EnvironmentInjector {
       token = provider;
       multiRecord.multi!.push(provider);
     } else {
-      const existing = this.records.get(token);
-      if (ngDevMode && existing && existing.multi !== undefined) {
-        throwMixedMultiProviderError();
+      if (ngDevMode) {
+        const existing = this.records.get(token);
+        if (existing && existing.multi !== undefined) {
+          throwMixedMultiProviderError();
+        }
       }
     }
     this.records.set(token, record);
   }
 
   private hydrate<T>(token: ProviderToken<T>, record: Record<T>): T {
-    if (ngDevMode && record.value === CIRCULAR) {
-      throwCyclicDependencyError(stringify(token));
-    } else if (record.value === NOT_YET) {
-      record.value = CIRCULAR;
+    const prevConsumer = setActiveConsumer(null);
+    try {
+      if (ngDevMode && record.value === CIRCULAR) {
+        throwCyclicDependencyError(stringify(token));
+      } else if (record.value === NOT_YET) {
+        record.value = CIRCULAR;
 
-      if (ngDevMode) {
-        runInInjectorProfilerContext(this, token as Type<T>, () => {
+        if (ngDevMode) {
+          runInInjectorProfilerContext(this, token as Type<T>, () => {
+            record.value = record.factory!();
+            emitInstanceCreatedByInjectorEvent(record.value);
+          });
+        } else {
           record.value = record.factory!();
-          emitInstanceCreatedByInjectorEvent(record.value);
-        });
-      } else {
-        record.value = record.factory!();
+        }
       }
+      if (typeof record.value === 'object' && record.value && hasOnDestroy(record.value)) {
+        this._ngOnDestroyHooks.add(record.value);
+      }
+      return record.value as T;
+    } finally {
+      setActiveConsumer(prevConsumer);
     }
-    if (typeof record.value === 'object' && record.value && hasOnDestroy(record.value)) {
-      this._ngOnDestroyHooks.add(record.value);
-    }
-    return record.value as T;
   }
 
   private injectableDefInScope(def: ɵɵInjectableDeclaration<any>): boolean {
@@ -480,10 +499,11 @@ function getUndecoratedInjectableFactory(token: Function) {
   // If the token has parameters then it has dependencies that we cannot resolve implicitly.
   const paramLength = token.length;
   if (paramLength > 0) {
-    const args: string[] = newArray(paramLength, '?');
     throw new RuntimeError(
         RuntimeErrorCode.INVALID_INJECTION_TOKEN,
-        ngDevMode && `Can't resolve all parameters for ${stringify(token)}: (${args.join(', ')}).`);
+        ngDevMode &&
+            `Can't resolve all parameters for ${stringify(token)}: (${
+                newArray(paramLength, '?').join(', ')}).`);
   }
 
   // The constructor function appears to have no parameters.

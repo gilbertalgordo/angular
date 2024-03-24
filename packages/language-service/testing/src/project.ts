@@ -9,11 +9,12 @@
 import {InternalOptions, LegacyNgcOptions, StrictTemplateOptions} from '@angular/compiler-cli/src/ngtsc/core/api';
 import {absoluteFrom, AbsoluteFsPath, FileSystem, getFileSystem, getSourceFileOrError} from '@angular/compiler-cli/src/ngtsc/file_system';
 import {OptimizeFor, TemplateTypeChecker} from '@angular/compiler-cli/src/ngtsc/typecheck/api';
-import ts from 'typescript/lib/tsserverlibrary';
+import ts from 'typescript';
 
 import {LanguageService} from '../../src/language_service';
 
 import {OpenBuffer} from './buffer';
+import {patchLanguageServiceProjectsWithTestHost} from './language_service_test_cache';
 
 export type ProjectFiles = {
   [fileName: string]: string;
@@ -76,14 +77,17 @@ export class Project {
 
     writeTsconfig(fs, tsConfigPath, entryFiles, angularCompilerOptions, tsCompilerOptions);
 
+    patchLanguageServiceProjectsWithTestHost();
+
     // Ensure the project is live in the ProjectService.
+    // This creates the `ts.Program` by configuring the project and loading it!
     projectService.openClientFile(entryFiles[0]);
     projectService.closeClientFile(entryFiles[0]);
 
     return new Project(projectName, projectService, tsConfigPath);
   }
 
-  constructor(
+  private constructor(
       readonly name: string, private projectService: ts.server.ProjectService,
       private tsConfigPath: AbsoluteFsPath) {
     // LS for project

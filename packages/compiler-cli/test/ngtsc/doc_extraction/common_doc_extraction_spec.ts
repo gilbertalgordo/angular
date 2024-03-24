@@ -12,9 +12,9 @@ import {loadStandardTestFiles} from '@angular/compiler-cli/src/ngtsc/testing';
 
 import {NgtscTestEnvironment} from '../env';
 
-const testFiles = loadStandardTestFiles({fakeCore: true, fakeCommon: true});
+const testFiles = loadStandardTestFiles({fakeCommon: true});
 
-runInEachFileSystem(os => {
+runInEachFileSystem(() => {
   let env!: NgtscTestEnvironment;
 
   describe('ngtsc common docs extraction', () => {

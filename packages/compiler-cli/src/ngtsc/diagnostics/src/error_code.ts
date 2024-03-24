@@ -23,6 +23,33 @@ export enum ErrorCode {
   VALUE_HAS_WRONG_TYPE = 1010,
   VALUE_NOT_LITERAL = 1011,
 
+  /**
+   * Raised when an initializer API is annotated with an unexpected decorator.
+   *
+   * e.g. `@Input` is also applied on the class member using `input`.
+   */
+  INITIALIZER_API_WITH_DISALLOWED_DECORATOR = 1050,
+
+  /**
+   * Raised when an initializer API feature (like signal inputs) are also
+   * declared in the class decorator metadata.
+   *
+   * e.g. a signal input is also declared in the `@Directive` `inputs` array.
+   */
+  INITIALIZER_API_DECORATOR_METADATA_COLLISION = 1051,
+
+  /**
+   * Raised whenever an initializer API does not support the `.required`
+   * function, but is still detected unexpectedly.
+   */
+  INITIALIZER_API_NO_REQUIRED_FUNCTION = 1052,
+
+  /**
+   * An Angular feature, like inputs, outputs or queries is incorrectly
+   * declared on a static member.
+   */
+  INCORRECTLY_DECLARED_ON_STATIC_MEMBER = 1100,
+
   COMPONENT_MISSING_TEMPLATE = 2001,
   PIPE_MISSING_NAME = 2002,
   PARAM_MISSING_TOKEN = 2003,
@@ -115,6 +142,12 @@ export enum ErrorCode {
 
   /** Raised when a component has both `styleUrls` and `styleUrl`. */
   COMPONENT_INVALID_STYLE_URLS = 2021,
+
+  /**
+   * Raised when a type in the `deferredImports` of a component is not a component, directive or
+   * pipe.
+   */
+  COMPONENT_UNKNOWN_DEFERRED_IMPORT = 2022,
 
   SYMBOL_NOT_EXPORTED = 3001,
   /**
@@ -266,11 +299,58 @@ export enum ErrorCode {
    *
    * ```
    * <ng-template let-ref>
-   *   {#for item of items; track ref}{/for}
+   *   @for (item of items; track ref) {}
    * </ng-template>
    * ```
    */
   ILLEGAL_FOR_LOOP_TRACK_ACCESS = 8009,
+
+  /**
+   * The trigger of a `defer` block cannot access its trigger element,
+   * either because it doesn't exist or it's in a different view.
+   *
+   * ```
+   * @defer (on interaction(trigger)) {...}
+   *
+   * <ng-template>
+   *   <button #trigger></button>
+   * </ng-template>
+   * ```
+   */
+  INACCESSIBLE_DEFERRED_TRIGGER_ELEMENT = 8010,
+
+  /**
+   * A control flow node is projected at the root of a component and is preventing its direct
+   * descendants from being projected, because it has more than one root node.
+   *
+   * ```
+   * <comp>
+   *  @if (expr) {
+   *    <div projectsIntoSlot></div>
+   *    Text preventing the div from being projected
+   *  }
+   * </comp>
+   * ```
+   */
+  CONTROL_FLOW_PREVENTING_CONTENT_PROJECTION = 8011,
+
+  /**
+   * A pipe imported via `@Component.deferredImports` is
+   * used outside of a `@defer` block in a template.
+   */
+  DEFERRED_PIPE_USED_EAGERLY = 8012,
+
+  /**
+   * A directive/component imported via `@Component.deferredImports` is
+   * used outside of a `@defer` block in a template.
+   */
+  DEFERRED_DIRECTIVE_USED_EAGERLY = 8013,
+
+  /**
+   * A directive/component/pipe imported via `@Component.deferredImports` is
+   * also included into the `@Component.imports` list.
+   */
+  DEFERRED_DEPENDENCY_IMPORTED_EAGERLY = 8014,
 
   /**
    * A two way binding in a template has an incorrect syntax,
@@ -364,6 +444,16 @@ export enum ErrorCode {
   SKIP_HYDRATION_NOT_STATIC = 8108,
 
   /**
+   * Signal functions should be invoked when interpolated in templates.
+   *
+   * For example:
+   * ```
+   * {{ mySignal() }}
+   * ```
+   */
+  INTERPOLATED_SIGNAL_NOT_INVOKED = 8109,
+
+  /**
    * The template type-checking engine would need to generate an inline type check block for a
    * component, but the current type-checking environment doesn't support it.
    */
@@ -398,14 +488,18 @@ export enum ErrorCode {
   SUGGEST_SUBOPTIMAL_TYPE_INFERENCE = 10002,
 
   /**
-   * A string is imported from another file to be used as template string for a component in local
-   * compilation mode.
+   * In local compilation mode a const is required to be resolved statically but cannot be so since
+   * it is imported from a file outside of the compilation unit. This usually happens with const
+   * being used as Angular decorators parameters such as `@Component.template`,
+   * `@HostListener.eventName`, etc.
    */
-  LOCAL_COMPILATION_IMPORTED_TEMPLATE_STRING = 11001,
+  LOCAL_COMPILATION_UNRESOLVED_CONST = 11001,
 
   /**
-   * A string is imported from another file to be used as styles string for a component in local
-   * compilation mode.
+   * In local compilation mode a certain expression or syntax is not supported. This is usually
+   * because the expression/syntax is not very common and so we did not add support for it yet. This
+   * can be changed in the future and support for more expressions could be added if need be.
+   * Meanwhile, this error is thrown to indicate a current unavailability.
    */
-  LOCAL_COMPILATION_IMPORTED_STYLES_STRING = 11002,
+  LOCAL_COMPILATION_UNSUPPORTED_EXPRESSION = 11003,
 }

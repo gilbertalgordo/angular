@@ -25,7 +25,6 @@ export {ɵɵgetInheritedFactory} from './di';
 export {getLocaleId, setLocaleId} from './i18n/i18n_locale_id';
 // clang-format off
 export {
-  detectChanges,
   store,
   ɵɵadvance,
 
@@ -92,6 +91,15 @@ export {
   ɵɵpropertyInterpolate8,
   ɵɵpropertyInterpolateV,
 
+  ɵɵcontentQuery,
+  ɵɵcontentQuerySignal,
+
+  ɵɵloadQuery,
+  ɵɵqueryRefresh,
+  ɵɵqueryAdvance,
+  ɵɵviewQuery,
+  ɵɵviewQuerySignal,
+
   ɵɵreference,
 
   ɵɵrepeater,
@@ -143,6 +151,7 @@ export {
   ɵɵdeferPrefetchOnHover,
   ɵɵdeferPrefetchOnInteraction,
   ɵɵdeferPrefetchOnViewport,
+  ɵɵdeferEnableTimerScheduling,
 
   ɵɵtext,
   ɵɵtextInterpolate,
@@ -155,20 +164,28 @@ export {
   ɵɵtextInterpolate7,
   ɵɵtextInterpolate8,
   ɵɵtextInterpolateV,
+
+  ɵɵtwoWayProperty,
+  ɵɵtwoWayBindingSet,
+  ɵɵtwoWayListener,
+
   ɵgetUnknownElementStrictMode,
   ɵsetUnknownElementStrictMode,
   ɵgetUnknownPropertyStrictMode,
   ɵsetUnknownPropertyStrictMode,
-
-  DeferBlockDependencyInterceptor as ɵDeferBlockDependencyInterceptor,
+} from './instructions/all';
+export {
   DEFER_BLOCK_DEPENDENCY_INTERCEPTOR as ɵDEFER_BLOCK_DEPENDENCY_INTERCEPTOR,
   DEFER_BLOCK_CONFIG as ɵDEFER_BLOCK_CONFIG,
-} from './instructions/all';
+} from '../defer/instructions';
+export {
+  DeferBlockDependencyInterceptor as ɵDeferBlockDependencyInterceptor,
+} from '../defer/interfaces';
 export {ɵɵi18n, ɵɵi18nApply, ɵɵi18nAttributes, ɵɵi18nEnd, ɵɵi18nExp,ɵɵi18nPostprocess, ɵɵi18nStart} from './instructions/i18n';
 export {RenderFlags} from './interfaces/definition';
 export {
   AttributeMarker
-} from './interfaces/node';
+} from './interfaces/attribute_marker';
 export {CssSelectorList, ProjectionSlots} from './interfaces/projection';
 export {
   setClassMetadata,
@@ -196,11 +213,6 @@ export {
   ɵɵpureFunctionV,
 } from './pure_function';
 export {
-  ɵɵcontentQuery,
-  ɵɵloadQuery,
-  ɵɵqueryRefresh,
-  ɵɵviewQuery} from './query';
-export {
   ɵɵdisableBindings,
 
   ɵɵenableBindings,
@@ -211,6 +223,7 @@ export {NO_CHANGE} from './tokens';
 export { ɵɵresolveBody, ɵɵresolveDocument,ɵɵresolveWindow} from './util/misc_utils';
 export { ɵɵtemplateRefExtractor} from './view_engine_compatibility_prebound';
 export {ɵɵgetComponentDepsFactory} from './local_compilation';
+export {ɵsetClassDebugInfo} from './debug/set_debug_info';
 // clang-format on
 
 export {

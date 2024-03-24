@@ -6,10 +6,16 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {ɵCurrencyIndex, ɵExtraLocaleDataIndex, ɵfindLocaleData, ɵgetLocaleCurrencyCode, ɵgetLocalePluralCase, ɵLocaleDataIndex} from '@angular/core';
+import {
+  ɵCurrencyIndex,
+  ɵExtraLocaleDataIndex,
+  ɵfindLocaleData,
+  ɵgetLocaleCurrencyCode,
+  ɵgetLocalePluralCase,
+  ɵLocaleDataIndex,
+} from '@angular/core';
 
 import {CURRENCIES_EN, CurrenciesSymbols} from './currencies';
-
 
 /**
  * Format styles that can be used to represent numbers.
@@ -22,7 +28,7 @@ export enum NumberFormatStyle {
   Decimal,
   Percent,
   Currency,
-  Scientific
+  Scientific,
 }
 
 /**
@@ -54,7 +60,7 @@ export enum Plural {
  */
 export enum FormStyle {
   Format,
-  Standalone
+  Standalone,
 }
 
 /**
@@ -72,7 +78,7 @@ export enum TranslationWidth {
   /** Full length for `en-US`. For example: "Sunday" */
   Wide,
   /** 2 characters for `en-US`, For example: "Su" */
-  Short
+  Short,
 }
 
 /**
@@ -106,9 +112,11 @@ export enum FormatWidth {
    * For `en-US`, `'EEEE, MMMM d, y, h:mm:ss a zzzz'`
    * (Example: `Monday, June 15, 2015 at 9:03:01 AM GMT+01:00`)
    */
-  Full
+  Full,
 }
 
+// This needs to be an object literal, rather than an enum, because TypeScript 5.4+
+// doesn't allow numeric keys and we have `Infinity` and `NaN`.
 /**
  * Symbols that can be used to replace placeholders in number patterns.
  * Examples are based on `en-US` values.
@@ -117,81 +125,84 @@ export enum FormatWidth {
  * @see [Internationalization (i18n) Guide](/guide/i18n-overview)
  *
  * @publicApi
+ * @object-literal-as-enum
  */
-export enum NumberSymbol {
+export const NumberSymbol = {
   /**
    * Decimal separator.
    * For `en-US`, the dot character.
    * Example: 2,345`.`67
    */
-  Decimal,
+  Decimal: 0,
   /**
    * Grouping separator, typically for thousands.
    * For `en-US`, the comma character.
    * Example: 2`,`345.67
    */
-  Group,
+  Group: 1,
   /**
    * List-item separator.
    * Example: "one, two, and three"
    */
-  List,
+  List: 2,
   /**
    * Sign for percentage (out of 100).
    * Example: 23.4%
    */
-  PercentSign,
+  PercentSign: 3,
   /**
    * Sign for positive numbers.
    * Example: +23
    */
-  PlusSign,
+  PlusSign: 4,
   /**
    * Sign for negative numbers.
    * Example: -23
    */
-  MinusSign,
+  MinusSign: 5,
   /**
    * Computer notation for exponential value (n times a power of 10).
    * Example: 1.2E3
    */
-  Exponential,
+  Exponential: 6,
   /**
    * Human-readable format of exponential.
    * Example: 1.2x103
    */
-  SuperscriptingExponent,
+  SuperscriptingExponent: 7,
   /**
    * Sign for permille (out of 1000).
    * Example: 23.4‰
    */
-  PerMille,
+  PerMille: 8,
   /**
    * Infinity, can be used with plus and minus.
    * Example: ∞, +∞, -∞
    */
-  Infinity,
+  Infinity: 9,
   /**
    * Not a number.
    * Example: NaN
    */
-  NaN,
+  NaN: 10,
   /**
    * Symbol used between time units.
    * Example: 10:52
    */
-  TimeSeparator,
+  TimeSeparator: 11,
   /**
    * Decimal separator for currency values (fallback to `Decimal`).
    * Example: $2,345.67
    */
-  CurrencyDecimal,
+  CurrencyDecimal: 12,
   /**
    * Group separator for currency values (fallback to `Group`).
    * Example: $2,345.67
    */
-  CurrencyGroup
-}
+  CurrencyGroup: 13,
+} as const;
+
+export type NumberSymbol = (typeof NumberSymbol)[keyof typeof NumberSymbol];
 
 /**
  * The value for each day of the week, based on the `en-US` locale
@@ -205,7 +216,7 @@ export enum WeekDay {
   Wednesday,
   Thursday,
   Friday,
-  Saturday
+  Saturday,
 }
 
 /**
@@ -233,10 +244,14 @@ export function getLocaleId(locale: string): string {
  * @publicApi
  */
 export function getLocaleDayPeriods(
-    locale: string, formStyle: FormStyle, width: TranslationWidth): Readonly<[string, string]> {
+  locale: string,
+  formStyle: FormStyle,
+  width: TranslationWidth,
+): Readonly<[string, string]> {
   const data = ɵfindLocaleData(locale);
   const amPmData = <[string, string][][]>[
-    data[ɵLocaleDataIndex.DayPeriodsFormat], data[ɵLocaleDataIndex.DayPeriodsStandalone]
+    data[ɵLocaleDataIndex.DayPeriodsFormat],
+    data[ɵLocaleDataIndex.DayPeriodsStandalone],
   ];
   const amPm = getLastDefinedValue(amPmData, formStyle);
   return getLastDefinedValue(amPm, width);
@@ -255,10 +270,15 @@ export function getLocaleDayPeriods(
  * @publicApi
  */
 export function getLocaleDayNames(
-    locale: string, formStyle: FormStyle, width: TranslationWidth): ReadonlyArray<string> {
+  locale: string,
+  formStyle: FormStyle,
+  width: TranslationWidth,
+): ReadonlyArray<string> {
   const data = ɵfindLocaleData(locale);
-  const daysData =
-      <string[][][]>[data[ɵLocaleDataIndex.DaysFormat], data[ɵLocaleDataIndex.DaysStandalone]];
+  const daysData = <string[][][]>[
+    data[ɵLocaleDataIndex.DaysFormat],
+    data[ɵLocaleDataIndex.DaysStandalone],
+  ];
   const days = getLastDefinedValue(daysData, formStyle);
   return getLastDefinedValue(days, width);
 }
@@ -276,10 +296,15 @@ export function getLocaleDayNames(
  * @publicApi
  */
 export function getLocaleMonthNames(
-    locale: string, formStyle: FormStyle, width: TranslationWidth): ReadonlyArray<string> {
+  locale: string,
+  formStyle: FormStyle,
+  width: TranslationWidth,
+): ReadonlyArray<string> {
   const data = ɵfindLocaleData(locale);
-  const monthsData =
-      <string[][][]>[data[ɵLocaleDataIndex.MonthsFormat], data[ɵLocaleDataIndex.MonthsStandalone]];
+  const monthsData = <string[][][]>[
+    data[ɵLocaleDataIndex.MonthsFormat],
+    data[ɵLocaleDataIndex.MonthsStandalone],
+  ];
   const months = getLastDefinedValue(monthsData, formStyle);
   return getLastDefinedValue(months, width);
 }
@@ -296,7 +321,9 @@ export function getLocaleMonthNames(
  * @publicApi
  */
 export function getLocaleEraNames(
-    locale: string, width: TranslationWidth): Readonly<[string, string]> {
+  locale: string,
+  width: TranslationWidth,
+): Readonly<[string, string]> {
   const data = ɵfindLocaleData(locale);
   const erasData = <[string, string][]>data[ɵLocaleDataIndex.Eras];
   return getLastDefinedValue(erasData, width);
@@ -384,7 +411,7 @@ export function getLocaleDateTimeFormat(locale: string, width: FormatWidth): str
 /**
  * Retrieves a localized number symbol that can be used to replace placeholders in number formats.
  * @param locale The locale code.
- * @param symbol The symbol to localize.
+ * @param symbol The symbol to localize. Must be one of `NumberSymbol`.
  * @returns The character for the localized symbol.
  * @see {@link NumberSymbol}
  * @see [Internationalization (i18n) Guide](/guide/i18n-overview)
@@ -455,7 +482,7 @@ export function getLocaleNumberFormat(locale: string, type: NumberFormatStyle): 
  *
  * @publicApi
  */
-export function getLocaleCurrencySymbol(locale: string): string|null {
+export function getLocaleCurrencySymbol(locale: string): string | null {
   const data = ɵfindLocaleData(locale);
   return data[ɵLocaleDataIndex.CurrencySymbol] || null;
 }
@@ -470,7 +497,7 @@ export function getLocaleCurrencySymbol(locale: string): string|null {
  *
  * @publicApi
  */
-export function getLocaleCurrencyName(locale: string): string|null {
+export function getLocaleCurrencyName(locale: string): string | null {
   const data = ɵfindLocaleData(locale);
   return data[ɵLocaleDataIndex.CurrencyName] || null;
 }
@@ -485,7 +512,7 @@ export function getLocaleCurrencyName(locale: string): string|null {
  *
  * @publicApi
  */
-export function getLocaleCurrencyCode(locale: string): string|null {
+export function getLocaleCurrencyCode(locale: string): string | null {
   return ɵgetLocaleCurrencyCode(locale);
 }
 
@@ -504,14 +531,16 @@ function getLocaleCurrencies(locale: string): {[code: string]: CurrenciesSymbols
  * @alias core/ɵgetLocalePluralCase
  * @publicApi
  */
-export const getLocalePluralCase: (locale: string) => ((value: number) => Plural) =
-    ɵgetLocalePluralCase;
+export const getLocalePluralCase: (locale: string) => (value: number) => Plural =
+  ɵgetLocalePluralCase;
 
 function checkFullData(data: any) {
   if (!data[ɵLocaleDataIndex.ExtraData]) {
-    throw new Error(`Missing extra locale data for the locale "${
-        data[ɵLocaleDataIndex
-                 .LocaleId]}". Use "registerLocaleData" to load new data. See the "I18n guide" on angular.io to know more.`);
+    throw new Error(
+      `Missing extra locale data for the locale "${
+        data[ɵLocaleDataIndex.LocaleId]
+      }". Use "registerLocaleData" to load new data. See the "I18n guide" on angular.io to know more.`,
+    );
   }
 }
 
@@ -537,11 +566,11 @@ function checkFullData(data: any) {
  *
  * @publicApi
  */
-export function getLocaleExtraDayPeriodRules(locale: string): (Time|[Time, Time])[] {
+export function getLocaleExtraDayPeriodRules(locale: string): (Time | [Time, Time])[] {
   const data = ɵfindLocaleData(locale);
   checkFullData(data);
   const rules = data[ɵLocaleDataIndex.ExtraData][ɵExtraLocaleDataIndex.ExtraDayPeriodsRules] || [];
-  return rules.map((rule: string|[string, string]) => {
+  return rules.map((rule: string | [string, string]) => {
     if (typeof rule === 'string') {
       return extractTime(rule);
     }
@@ -567,12 +596,15 @@ export function getLocaleExtraDayPeriodRules(locale: string): (Time|[Time, Time]
  * @publicApi
  */
 export function getLocaleExtraDayPeriods(
-    locale: string, formStyle: FormStyle, width: TranslationWidth): string[] {
+  locale: string,
+  formStyle: FormStyle,
+  width: TranslationWidth,
+): string[] {
   const data = ɵfindLocaleData(locale);
   checkFullData(data);
   const dayPeriodsData = <string[][][]>[
     data[ɵLocaleDataIndex.ExtraData][ɵExtraLocaleDataIndex.ExtraDayPeriodFormats],
-    data[ɵLocaleDataIndex.ExtraData][ɵExtraLocaleDataIndex.ExtraDayPeriodStandalone]
+    data[ɵLocaleDataIndex.ExtraData][ɵExtraLocaleDataIndex.ExtraDayPeriodStandalone],
   ];
   const dayPeriods = getLastDefinedValue(dayPeriodsData, formStyle) || [];
   return getLastDefinedValue(dayPeriods, width) || [];
@@ -585,7 +617,7 @@ export function getLocaleExtraDayPeriods(
  * @returns 'rtl' or 'ltr'
  * @see [Internationalization (i18n) Guide](/guide/i18n-overview)
  */
-export function getLocaleDirection(locale: string): 'ltr'|'rtl' {
+export function getLocaleDirection(locale: string): 'ltr' | 'rtl' {
   const data = ɵfindLocaleData(locale);
   return data[ɵLocaleDataIndex.Directionality];
 }
@@ -618,8 +650,8 @@ function getLastDefinedValue<T>(data: T[], index: number): T {
  * @publicApi
  */
 export type Time = {
-  hours: number,
-  minutes: number
+  hours: number;
+  minutes: number;
 };
 
 /**
@@ -629,8 +661,6 @@ function extractTime(time: string): Time {
   const [h, m] = time.split(':');
   return {hours: +h, minutes: +m};
 }
-
-
 
 /**
  * Retrieves the currency symbol for a given currency code.
@@ -647,7 +677,7 @@ function extractTime(time: string): Time {
  *
  * @publicApi
  */
-export function getCurrencySymbol(code: string, format: 'wide'|'narrow', locale = 'en'): string {
+export function getCurrencySymbol(code: string, format: 'wide' | 'narrow', locale = 'en'): string {
   const currency = getLocaleCurrencies(locale)[code] || CURRENCIES_EN[code] || [];
   const symbolNarrow = currency[ɵCurrencyIndex.SymbolNarrow];
 

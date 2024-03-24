@@ -13,9 +13,9 @@ import {loadStandardTestFiles} from '@angular/compiler-cli/src/ngtsc/testing';
 
 import {NgtscTestEnvironment} from '../env';
 
-const testFiles = loadStandardTestFiles({fakeCore: true, fakeCommon: true});
+const testFiles = loadStandardTestFiles({fakeCommon: true});
 
-runInEachFileSystem(os => {
+runInEachFileSystem(() => {
   let env!: NgtscTestEnvironment;
 
   describe('ngtsc directive docs extraction', () => {
@@ -72,10 +72,10 @@ runInEachFileSystem(os => {
     it('should extract NgModule directive info', () => {
       env.write('index.ts', `
         import {Directive, NgModule} from '@angular/core';
-        
+
         @NgModule({declarations: [UserProfile]})
         export class ProfileModule { }
-        
+
         @Directive({
           standalone: false,
           selector: 'user-profile',
@@ -98,10 +98,10 @@ runInEachFileSystem(os => {
     it('should extract NgModule component info', () => {
       env.write('index.ts', `
         import {Component, NgModule} from '@angular/core';
-        
+
         @NgModule({declarations: [UserProfile]})
         export class ProfileModule { }
-        
+
         @Component({
           standalone: false,
           selector: 'user-profile',
@@ -130,9 +130,10 @@ runInEachFileSystem(os => {
           selector: 'user-profile',
           exportAs: 'userProfile',
         })
-        export class UserProfile { 
+        export class UserProfile {
           @Input() name: string = '';
           @Input('first') firstName = '';
+          @Input({required: true}) middleName = '';
           @Output() saved = new EventEmitter();
           @Output('onReset') reset = new EventEmitter();
         }
@@ -144,25 +145,34 @@ runInEachFileSystem(os => {
       expect(docs[0].entryType).toBe(EntryType.Directive);
 
       const directiveEntry = docs[0] as DirectiveEntry;
-      expect(directiveEntry.members.length).toBe(4);
+      expect(directiveEntry.members.length).toBe(5);
 
-      const [nameEntry, firstNameEntry, savedEntry, resetEntry, ] = directiveEntry.members;
+      const [nameEntry, firstNameEntry, middleNameEntry, savedEntry, resetEntry,] = directiveEntry.members as PropertyEntry[];
 
       expect(nameEntry.memberTags).toEqual([MemberTags.Input]);
-      expect((nameEntry as PropertyEntry).inputAlias).toBe('name');
-      expect((nameEntry as PropertyEntry).outputAlias).toBeUndefined();
+      expect(nameEntry.inputAlias).toBe('name');
+      expect(nameEntry.isRequiredInput).toBe(false);
+      expect(nameEntry.outputAlias).toBeUndefined();
 
       expect(firstNameEntry.memberTags).toEqual([MemberTags.Input]);
-      expect((firstNameEntry as PropertyEntry).inputAlias).toBe('first');
-      expect((firstNameEntry as PropertyEntry).outputAlias).toBeUndefined();
+      expect(firstNameEntry.inputAlias).toBe('first');
+      expect(firstNameEntry.isRequiredInput).toBe(false);
+      expect(firstNameEntry.outputAlias).toBeUndefined();
+
+      expect(middleNameEntry.memberTags).toEqual([MemberTags.Input]);
+      expect(middleNameEntry.inputAlias).toBe('middleName');
+      expect(middleNameEntry.isRequiredInput).toBe(true);
+      expect(middleNameEntry.outputAlias).toBeUndefined();
 
       expect(savedEntry.memberTags).toEqual([MemberTags.Output]);
-      expect((savedEntry as PropertyEntry).outputAlias).toBe('saved');
-      expect((savedEntry as PropertyEntry).inputAlias).toBeUndefined();
+      expect(savedEntry.outputAlias).toBe('saved');
+      expect(savedEntry.isRequiredInput).toBeFalsy();
+      expect(savedEntry.inputAlias).toBeUndefined();
 
       expect(resetEntry.memberTags).toEqual([MemberTags.Output]);
-      expect((resetEntry as PropertyEntry).outputAlias).toBe('onReset');
-      expect((resetEntry as PropertyEntry).inputAlias).toBeUndefined();
+      expect(resetEntry.outputAlias).toBe('onReset');
+      expect(resetEntry.isRequiredInput).toBeFalsy();
+      expect(resetEntry.inputAlias).toBeUndefined();
     });
 
     it('should extract input and output info for a component', () => {
@@ -174,7 +184,7 @@ runInEachFileSystem(os => {
           exportAs: 'userProfile',
           template: '',
         })
-        export class UserProfile { 
+        export class UserProfile {
           @Input() name: string = '';
           @Input('first') firstName = '';
           @Output() saved = new EventEmitter();
@@ -219,14 +229,14 @@ runInEachFileSystem(os => {
           exportAs: 'userProfile',
           template: '',
         })
-        export class UserProfile { 
+        export class UserProfile {
           @Input()
           get userId(): number { return 123; }
-          
+
           @Input()
           get userName(): string { return 'Morgan'; }
           set userName(value: string) { }
-          
+
           @Input()
           set isAdmin(value: boolean) { }
         }

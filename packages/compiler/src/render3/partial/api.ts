@@ -32,6 +32,11 @@ export interface R3PartialDeclaration {
   type: o.Expression;
 }
 
+// TODO(legacy-partial-output-inputs): Remove in v18.
+// https://github.com/angular/angular/blob/d4b423690210872b5c32a322a6090beda30b05a3/packages/core/src/compiler/compiler_facade_interface.ts#L197-L199
+export type LegacyInputPartialMapping = string|
+    [bindingPropertyName: string, classPropertyName: string, transformFunction?: o.Expression];
+
 /**
  * Describes the shape of the object that the `ɵɵngDeclareDirective()` function accepts.
  */
@@ -46,8 +51,13 @@ export interface R3DeclareDirectiveMetadata extends R3PartialDeclaration {
    * binding property name and class property name if the names are different.
    */
   inputs?: {
-    [classPropertyName: string]: string|
-    [bindingPropertyName: string, classPropertyName: string, transformFunction?: o.Expression]
+    [fieldName: string]: {
+      classPropertyName: string,
+      publicName: string,
+      isSignal: boolean,
+      isRequired: boolean,
+      transformFunction: o.Expression|null,
+    }|LegacyInputPartialMapping;
   };
 
   /**
@@ -179,6 +189,12 @@ export interface R3DeclareComponentMetadata extends R3DeclareDirectiveMetadata {
    * support this.
    */
   dependencies?: R3DeclareTemplateDependencyMetadata[];
+
+  /**
+   * List of defer block dependency functions, ordered by the appearance
+   * of the corresponding deferred block in the template.
+   */
+  deferBlockDependencies?: o.Expression[];
 
   /**
    * A map of pipe names to an expression referencing the pipe type (possibly a forward reference
@@ -317,6 +333,9 @@ export interface R3DeclareQueryMetadata {
    * content hooks and ngAfterViewInit for view hooks).
    */
   static?: boolean;
+
+  /** Whether the query is signal-based. */
+  isSignal: boolean;
 }
 
 /**
@@ -542,6 +561,23 @@ export interface R3DeclareClassMetadata extends R3PartialDeclaration {
    * omitted if no properties have any decorators.
    */
   propDecorators?: o.Expression;
+}
+
+/**
+ * Describes the shape of the object that the `ɵɵngDeclareClassMetadataAsync()` function accepts.
+ *
+ * This interface serves primarily as documentation, as conformance to this interface is not
+ * enforced during linking.
+ */
+export interface R3DeclareClassMetadataAsync extends R3PartialDeclaration {
+  /** Function that loads the deferred dependencies associated with the component. */
+  resolveDeferredDeps: o.Expression;
+
+  /**
+   * Function that, when invoked with the resolved deferred
+   * dependencies, will return the class metadata.
+   */
+  resolveMetadata: o.Expression;
 }
 
 /**

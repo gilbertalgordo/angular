@@ -7,13 +7,12 @@
  */
 
 import {ChangeDetectionStrategy, ViewEncapsulation} from '../../core';
-import {InterpolationConfig} from '../../ml_parser/interpolation_config';
+import {InterpolationConfig} from '../../ml_parser/defaults';
 import * as o from '../../output/output_ast';
 import {ParseSourceSpan} from '../../parse_util';
 import * as t from '../r3_ast';
 import {R3DependencyMetadata} from '../r3_factory';
 import {MaybeForwardRefExpression, R3Reference} from '../util';
-
 
 /**
  * Information needed to compile a directive for the render3 runtime.
@@ -126,6 +125,31 @@ export interface R3DirectiveMetadata {
 }
 
 /**
+ * Defines how dynamic imports for deferred dependencies should be emitted in the
+ * generated output:
+ *  - either in a function on per-component basis (in case of local compilation)
+ *  - or in a function on per-block basis (in full compilation mode)
+ */
+export const enum DeferBlockDepsEmitMode {
+  /**
+   * Dynamic imports are grouped on per-block basis.
+   *
+   * This is used in full compilation mode, when compiler has more information
+   * about particular dependencies that belong to this block.
+   */
+  PerBlock,
+
+  /**
+   * Dynamic imports are grouped on per-component basis.
+   *
+   * In local compilation, compiler doesn't have enough information to determine
+   * which deferred dependencies belong to which block. In this case we group all
+   * dynamic imports into a single file on per-component basis.
+   */
+  PerComponent,
+}
+
+/**
  * Specifies how a list of declaration type references should be emitted into the generated code.
  */
 export const enum DeclarationListEmitMode {
@@ -172,42 +196,6 @@ export const enum DeclarationListEmitMode {
 }
 
 /**
- * Describes a dependency used within a `{#defer}` block.
- */
-export interface R3DeferBlockTemplateDependency {
-  /**
-   * Reference to a dependency.
-   */
-  type: o.WrappedNodeExpr<unknown>;
-
-  /**
-   * Dependency class name.
-   */
-  symbolName: string;
-
-  /**
-   * Whether this dependency can be defer-loaded.
-   */
-  isDeferrable: boolean;
-
-  /**
-   * Import path where this dependency is located.
-   */
-  importPath: string|null;
-}
-
-/**
- * Information necessary to compile a `defer` block.
- */
-export interface R3DeferBlockMetadata {
-  /** Dependencies used within the block. */
-  deps: R3DeferBlockTemplateDependency[];
-
-  /** Mapping between triggers and the DOM nodes they refer to. */
-  triggerElements: Map<t.DeferredTrigger, t.Element|null>;
-}
-
-/**
  * Information needed to compile a component for the render3 runtime.
  */
 export interface R3ComponentMetadata<DeclarationT extends R3TemplateDependency> extends
@@ -226,21 +214,17 @@ export interface R3ComponentMetadata<DeclarationT extends R3TemplateDependency> 
      * element without selector is present.
      */
     ngContentSelectors: string[];
+
+    /**
+     * Whether the template preserves whitespaces from the user's code.
+     */
+    preserveWhitespaces?: boolean;
   };
 
   declarations: DeclarationT[];
 
-  /**
-   * Map of all types that can be defer loaded (ts.ClassDeclaration) ->
-   * corresponding import declaration (ts.ImportDeclaration) within
-   * the current source file.
-   */
-  deferrableDeclToImportDecl: Map<o.Expression, o.Expression>;
-
-  /**
-   * Map of {#defer} blocks -> their corresponding metadata.
-   */
-  deferBlocks: Map<t.DeferredBlock, R3DeferBlockMetadata>;
+  /** Metadata related to the deferred blocks in the component's template. */
+  defer: R3ComponentDeferMetadata;
 
   /**
    * Specifies how the 'directives' and/or `pipes` array, if generated, need to be emitted.
@@ -292,8 +276,12 @@ export interface R3ComponentMetadata<DeclarationT extends R3TemplateDependency> 
 
   /**
    * Strategy used for detecting changes in the component.
+   *
+   * In global compilation mode the value is ChangeDetectionStrategy if available as it is
+   * statically resolved during analysis phase. Whereas in local compilation mode the value is the
+   * expression as appears in the decorator.
    */
-  changeDetection?: ChangeDetectionStrategy;
+  changeDetection: ChangeDetectionStrategy|o.Expression|null;
 
   /**
    * The imports expression as appears on the component decorate for standalone component. This
@@ -304,12 +292,30 @@ export interface R3ComponentMetadata<DeclarationT extends R3TemplateDependency> 
 }
 
 /**
+ * Information about the deferred blocks in a component's template.
+ */
+export type R3ComponentDeferMetadata = {
+  mode: DeferBlockDepsEmitMode.PerBlock,
+  blocks: Map<t.DeferredBlock, o.Expression|null>,
+}|{
+  mode: DeferBlockDepsEmitMode.PerComponent,
+  dependenciesFn: o.Expression | null,
+};
+
+/**
  * Metadata for an individual input on a directive.
  */
 export interface R3InputMetadata {
   classPropertyName: string;
   bindingPropertyName: string;
   required: boolean;
+  isSignal: boolean;
+  /**
+   * Transform function for the input.
+   *
+   * Null if there is no transform, or if this is a signal input.
+   * Signal inputs capture their transform as part of the `InputSignal`.
+   */
   transformFunction: o.Expression|null;
 }
 
@@ -397,6 +403,12 @@ export interface R3QueryMetadata {
   /**
    * Either an expression representing a type or `InjectionToken` for the query
    * predicate, or a set of string selectors.
+   *
+   * Note: At compile time we split selectors as an optimization that avoids this
+   * extra work at runtime creation phase.
+   *
+   * Notably, if the selector is not statically analyzable due to an expression,
+   * the selectors may need to be split up at runtime.
    */
   predicate: MaybeForwardRefExpression|string[];
 
@@ -430,8 +442,13 @@ export interface R3QueryMetadata {
    * runs. This means that the query results can contain nodes inside *ngIf or *ngFor views, but
    * the results will not be available in the ngOnInit hook (only in the ngAfterContentInit for
    * content hooks and ngAfterViewInit for view hooks).
+   *
+   * Note: For signal-based queries, this option does not have any effect.
    */
   static: boolean;
+
+  /** Whether the query is signal-based. */
+  isSignal: boolean;
 }
 
 /**
@@ -472,4 +489,65 @@ export interface R3HostDirectiveMetadata {
 
   /** Outputs from the host directive that will be exposed on the host. */
   outputs: {[publicName: string]: string}|null;
+}
+
+/**
+ * Information needed to compile the defer block resolver function.
+ */
+export type R3DeferResolverFunctionMetadata = {
+  mode: DeferBlockDepsEmitMode.PerBlock,
+  dependencies: R3DeferPerBlockDependency[],
+}|{
+  mode: DeferBlockDepsEmitMode.PerComponent,
+  dependencies: R3DeferPerComponentDependency[],
+};
+
+/**
+ * Information about a single dependency of a defer block in `PerBlock` mode.
+ */
+export interface R3DeferPerBlockDependency {
+  /**
+   * Reference to a dependency.
+   */
+  typeReference: o.Expression;
+
+  /**
+   * Dependency class name.
+   */
+  symbolName: string;
+
+  /**
+   * Whether this dependency can be defer-loaded.
+   */
+  isDeferrable: boolean;
+
+  /**
+   * Import path where this dependency is located.
+   */
+  importPath: string|null;
+
+  /**
+   * Whether the symbol is the default export.
+   */
+  isDefaultImport: boolean;
+}
+
+/**
+ * Information about a single dependency of a defer block in `PerComponent` mode.
+ */
+export interface R3DeferPerComponentDependency {
+  /**
+   * Dependency class name.
+   */
+  symbolName: string;
+
+  /**
+   * Import path where this dependency is located.
+   */
+  importPath: string;
+
+  /**
+   * Whether the symbol is the default export.
+   */
+  isDefaultImport: boolean;
 }

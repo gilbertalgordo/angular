@@ -7,13 +7,13 @@
  */
 
 import {ResourceLoader} from '@angular/compiler';
-import {ApplicationInitStatus, Compiler, COMPILER_OPTIONS, Component, Directive, Injector, InjectorType, LOCALE_ID, ModuleWithComponentFactories, ModuleWithProviders, NgModule, NgModuleFactory, NgZone, Pipe, PlatformRef, Provider, provideZoneChangeDetection, resolveForwardRef, StaticProvider, Type, ɵclearResolutionOfComponentResourcesQueue, ɵcompileComponent as compileComponent, ɵcompileDirective as compileDirective, ɵcompileNgModuleDefs as compileNgModuleDefs, ɵcompilePipe as compilePipe, ɵDEFAULT_LOCALE_ID as DEFAULT_LOCALE_ID, ɵDEFER_BLOCK_CONFIG as DEFER_BLOCK_CONFIG, ɵDeferBlockBehavior as DeferBlockBehavior, ɵdepsTracker as depsTracker, ɵDirectiveDef as DirectiveDef, ɵgenerateStandaloneInDeclarationsError, ɵgetAsyncClassMetadata as getAsyncClassMetadata, ɵgetInjectableDef as getInjectableDef, ɵInternalEnvironmentProviders as InternalEnvironmentProviders, ɵisComponentDefPendingResolution, ɵisEnvironmentProviders as isEnvironmentProviders, ɵNG_COMP_DEF as NG_COMP_DEF, ɵNG_DIR_DEF as NG_DIR_DEF, ɵNG_INJ_DEF as NG_INJ_DEF, ɵNG_MOD_DEF as NG_MOD_DEF, ɵNG_PIPE_DEF as NG_PIPE_DEF, ɵNgModuleFactory as R3NgModuleFactory, ɵNgModuleTransitiveScopes as NgModuleTransitiveScopes, ɵNgModuleType as NgModuleType, ɵpatchComponentDefWithScope as patchComponentDefWithScope, ɵRender3ComponentFactory as ComponentFactory, ɵRender3NgModuleRef as NgModuleRef, ɵresolveComponentResources, ɵrestoreComponentResolutionQueue, ɵsetLocaleId as setLocaleId, ɵtransitiveScopesFor as transitiveScopesFor, ɵUSE_RUNTIME_DEPS_TRACKER_FOR_JIT as USE_RUNTIME_DEPS_TRACKER_FOR_JIT, ɵɵInjectableDeclaration as InjectableDeclaration} from '@angular/core';
+import {ApplicationInitStatus, Compiler, COMPILER_OPTIONS, Component, Directive, Injector, InjectorType, LOCALE_ID, ModuleWithComponentFactories, ModuleWithProviders, NgModule, NgModuleFactory, NgZone, Pipe, PlatformRef, Provider, provideZoneChangeDetection, resolveForwardRef, StaticProvider, Type, ɵclearResolutionOfComponentResourcesQueue, ɵcompileComponent as compileComponent, ɵcompileDirective as compileDirective, ɵcompileNgModuleDefs as compileNgModuleDefs, ɵcompilePipe as compilePipe, ɵDEFAULT_LOCALE_ID as DEFAULT_LOCALE_ID, ɵDEFER_BLOCK_CONFIG as DEFER_BLOCK_CONFIG, ɵDeferBlockBehavior as DeferBlockBehavior, ɵdepsTracker as depsTracker, ɵDirectiveDef as DirectiveDef, ɵgenerateStandaloneInDeclarationsError, ɵgetAsyncClassMetadataFn as getAsyncClassMetadataFn, ɵgetInjectableDef as getInjectableDef, ɵInternalEnvironmentProviders as InternalEnvironmentProviders, ɵisComponentDefPendingResolution, ɵisEnvironmentProviders as isEnvironmentProviders, ɵNG_COMP_DEF as NG_COMP_DEF, ɵNG_DIR_DEF as NG_DIR_DEF, ɵNG_INJ_DEF as NG_INJ_DEF, ɵNG_MOD_DEF as NG_MOD_DEF, ɵNG_PIPE_DEF as NG_PIPE_DEF, ɵNgModuleFactory as R3NgModuleFactory, ɵNgModuleTransitiveScopes as NgModuleTransitiveScopes, ɵNgModuleType as NgModuleType, ɵpatchComponentDefWithScope as patchComponentDefWithScope, ɵRender3ComponentFactory as ComponentFactory, ɵRender3NgModuleRef as NgModuleRef, ɵresolveComponentResources, ɵrestoreComponentResolutionQueue, ɵsetLocaleId as setLocaleId, ɵtransitiveScopesFor as transitiveScopesFor, ɵUSE_RUNTIME_DEPS_TRACKER_FOR_JIT as USE_RUNTIME_DEPS_TRACKER_FOR_JIT, ɵɵInjectableDeclaration as InjectableDeclaration} from '@angular/core';
 
 import {ComponentDef, ComponentType} from '../../src/render3';
 
 import {MetadataOverride} from './metadata_override';
 import {ComponentResolver, DirectiveResolver, NgModuleResolver, PipeResolver, Resolver} from './resolvers';
-import {TestModuleMetadata} from './test_bed_common';
+import {DEFER_BLOCK_DEFAULT_BEHAVIOR, TestModuleMetadata} from './test_bed_common';
 
 enum TestingModuleOverride {
   DECLARATION,
@@ -28,7 +28,7 @@ function isTestingModuleOverride(value: unknown): value is TestingModuleOverride
 function assertNoStandaloneComponents(
     types: Type<any>[], resolver: Resolver<any>, location: string) {
   types.forEach(type => {
-    if (!getAsyncClassMetadata(type)) {
+    if (!getAsyncClassMetadataFn(type)) {
       const component = resolver.resolve(type);
       if (component && component.standalone) {
         throw new Error(ɵgenerateStandaloneInDeclarationsError(type, location));
@@ -65,6 +65,10 @@ export class TestBedCompiler {
   private pendingDirectives = new Set<Type<any>>();
   private pendingPipes = new Set<Type<any>>();
 
+  // Set of components with async metadata, i.e. components with `@defer` blocks
+  // in their templates.
+  private componentsWithAsyncMetadata = new Set<Type<unknown>>();
+
   // Keep track of all components and directives, so we can patch Providers onto defs later.
   private seenComponents = new Set<Type<any>>();
   private seenDirectives = new Set<Type<any>>();
@@ -78,7 +82,14 @@ export class TestBedCompiler {
 
   private resolvers: Resolvers = initResolvers();
 
-  private componentToModuleScope = new Map<Type<any>, Type<any>|TestingModuleOverride>();
+  // Map of component type to an NgModule that declares it.
+  //
+  // There are a couple special cases:
+  // - for standalone components, the module scope value is `null`
+  // - when a component is declared in `TestBed.configureTestingModule()` call or
+  //   a component's template is overridden via `TestBed.overrideTemplateUsingTestingModule()`.
+  //   we use a special value from the `TestingModuleOverride` enum.
+  private componentToModuleScope = new Map<Type<any>, Type<any>|TestingModuleOverride|null>();
 
   // Map that keeps initial version of component/directive/pipe defs in case
   // we compile a Type again, thus overriding respective static fields. This is
@@ -105,7 +116,7 @@ export class TestBedCompiler {
   private testModuleType: NgModuleType<any>;
   private testModuleRef: NgModuleRef<any>|null = null;
 
-  private deferBlockBehavior = DeferBlockBehavior.Manual;
+  private deferBlockBehavior = DEFER_BLOCK_DEFAULT_BEHAVIOR;
 
   constructor(private platform: PlatformRef, private additionalModuleTypes: Type<any>|Type<any>[]) {
     class DynamicTestModule {}
@@ -142,7 +153,7 @@ export class TestBedCompiler {
       this.schemas.push(...moduleDef.schemas);
     }
 
-    this.deferBlockBehavior = moduleDef.deferBlockBehavior ?? DeferBlockBehavior.Manual;
+    this.deferBlockBehavior = moduleDef.deferBlockBehavior ?? DEFER_BLOCK_DEFAULT_BEHAVIOR;
   }
 
   overrideModule(ngModule: Type<any>, override: MetadataOverride<NgModule>): void {
@@ -170,6 +181,10 @@ export class TestBedCompiler {
     this.verifyNoStandaloneFlagOverrides(component, override);
     this.resolvers.component.addOverride(component, override);
     this.pendingComponents.add(component);
+
+    // If this is a component with async metadata (i.e. a component with a `@defer` block
+    // in a template) - store it for future processing.
+    this.maybeRegisterComponentWithAsyncMetadata(component);
   }
 
   overrideDirective(directive: Type<any>, override: MetadataOverride<Directive>): void {
@@ -258,18 +273,26 @@ export class TestBedCompiler {
   }
 
   private async resolvePendingComponentsWithAsyncMetadata() {
-    if (this.pendingComponents.size === 0) return;
+    if (this.componentsWithAsyncMetadata.size === 0) return;
 
     const promises = [];
-    for (const component of this.pendingComponents) {
-      const asyncMetadataPromise = getAsyncClassMetadata(component);
-      if (asyncMetadataPromise) {
-        promises.push(asyncMetadataPromise);
+    for (const component of this.componentsWithAsyncMetadata) {
+      const asyncMetadataFn = getAsyncClassMetadataFn(component);
+      if (asyncMetadataFn) {
+        promises.push(asyncMetadataFn());
       }
     }
+    this.componentsWithAsyncMetadata.clear();
 
     const resolvedDeps = await Promise.all(promises);
-    this.queueTypesFromModulesArray(resolvedDeps.flat(2));
+    const flatResolvedDeps = resolvedDeps.flat(2);
+    this.queueTypesFromModulesArray(flatResolvedDeps);
+
+    // Loaded standalone components might contain imports of NgModules
+    // with providers, make sure we override providers there too.
+    for (const component of flatResolvedDeps) {
+      this.applyProviderOverridesInScope(component);
+    }
   }
 
   async compileComponents(): Promise<void> {
@@ -382,7 +405,7 @@ export class TestBedCompiler {
     // Compile all queued components, directives, pipes.
     let needsAsyncResources = false;
     this.pendingComponents.forEach(declaration => {
-      if (getAsyncClassMetadata(declaration)) {
+      if (getAsyncClassMetadataFn(declaration)) {
         throw new Error(
             `Component '${declaration.name}' has unresolved metadata. ` +
             `Please call \`await TestBed.compileComponents()\` before running this test.`);
@@ -396,6 +419,9 @@ export class TestBedCompiler {
       }
 
       this.maybeStoreNgDef(NG_COMP_DEF, declaration);
+      if (USE_RUNTIME_DEPS_TRACKER_FOR_JIT) {
+        depsTracker.clearScopeCacheFor(declaration);
+      }
       compileComponent(declaration, metadata);
     });
     this.pendingComponents.clear();
@@ -454,15 +480,20 @@ export class TestBedCompiler {
         };
 
     this.componentToModuleScope.forEach((moduleType, componentType) => {
-      const moduleScope = getScopeOfModule(moduleType);
-      this.storeFieldOfDefOnType(componentType, NG_COMP_DEF, 'directiveDefs');
-      this.storeFieldOfDefOnType(componentType, NG_COMP_DEF, 'pipeDefs');
+      if (moduleType !== null) {
+        const moduleScope = getScopeOfModule(moduleType);
+        this.storeFieldOfDefOnType(componentType, NG_COMP_DEF, 'directiveDefs');
+        this.storeFieldOfDefOnType(componentType, NG_COMP_DEF, 'pipeDefs');
+        patchComponentDefWithScope(getComponentDef(componentType)!, moduleScope);
+      }
       // `tView` that is stored on component def contains information about directives and pipes
       // that are in the scope of this component. Patching component scope will cause `tView` to be
       // changed. Store original `tView` before patching scope, so the `tView` (including scope
       // information) is restored back to its previous/original state before running next test.
+      // Resetting `tView` is also needed for cases when we apply provider overrides and those
+      // providers are defined on component's level, in which case they may end up included into
+      // `tView.blueprint`.
       this.storeFieldOfDefOnType(componentType, NG_COMP_DEF, 'tView');
-      patchComponentDefWithScope((componentType as any).ɵcmp, moduleScope);
     });
 
     this.componentToModuleScope.clear();
@@ -575,7 +606,18 @@ export class TestBedCompiler {
     compileNgModuleDefs(ngModule as NgModuleType<any>, metadata);
   }
 
+  private maybeRegisterComponentWithAsyncMetadata(type: Type<unknown>) {
+    const asyncMetadataFn = getAsyncClassMetadataFn(type);
+    if (asyncMetadataFn) {
+      this.componentsWithAsyncMetadata.add(type);
+    }
+  }
+
   private queueType(type: Type<any>, moduleType: Type<any>|TestingModuleOverride|null): void {
+    // If this is a component with async metadata (i.e. a component with a `@defer` block
+    // in a template) - store it for future processing.
+    this.maybeRegisterComponentWithAsyncMetadata(type);
+
     const component = this.resolvers.component.resolve(type);
     if (component) {
       // Check whether a give Type has respective NG def (ɵcmp) and compile if def is
@@ -601,10 +643,7 @@ export class TestBedCompiler {
       // real module, which was imported. This pattern is understood to mean that the component
       // should use its original scope, but that the testing module should also contain the
       // component in its scope.
-      //
-      // Note: standalone components have no associated NgModule, so the `moduleType` can be `null`.
-      if (moduleType !== null &&
-          (!this.componentToModuleScope.has(type) ||
+      if ((!this.componentToModuleScope.has(type) ||
            this.componentToModuleScope.get(type) === TestingModuleOverride.DECLARATION)) {
         this.componentToModuleScope.set(type, moduleType);
       }

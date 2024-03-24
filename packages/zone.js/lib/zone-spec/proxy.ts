@@ -5,7 +5,10 @@
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-class ProxyZoneSpec implements ZoneSpec {
+
+import {ZoneType} from '../zone-impl';
+
+export class ProxyZoneSpec implements ZoneSpec {
   name: string = 'ProxyZone';
 
   private _delegateSpec: ZoneSpec|null = null;
@@ -197,6 +200,8 @@ class ProxyZoneSpec implements ZoneSpec {
   }
 }
 
-// Export the class so that new instances can be created with proper
-// constructor params.
-(Zone as any)['ProxyZoneSpec'] = ProxyZoneSpec;
+export function patchProxyZoneSpec(Zone: ZoneType): void {
+  // Export the class so that new instances can be created with proper
+  // constructor params.
+  (Zone as any)['ProxyZoneSpec'] = ProxyZoneSpec;
+}

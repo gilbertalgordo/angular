@@ -64,7 +64,17 @@ load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
 
 nodejs_register_toolchains(
     name = "nodejs",
-    node_version = "18.13.0",
+    node_repositories = {
+        "18.18.2-darwin_arm64": ("node-v18.18.2-darwin-arm64.tar.gz", "node-v18.18.2-darwin-arm64", "9f982cc91b28778dd8638e4f94563b0c2a1da7aba62beb72bd427721035ab553"),
+        "18.18.2-darwin_amd64": ("node-v18.18.2-darwin-x64.tar.gz", "node-v18.18.2-darwin-x64", "5bb8da908ed590e256a69bf2862238c8a67bc4600119f2f7721ca18a7c810c0f"),
+        "18.18.2-linux_arm64": ("node-v18.18.2-linux-arm64.tar.xz", "node-v18.18.2-linux-arm64", "2e630e18548627f61eaf573233da7949dc0a1df5eef3f486fa9820c5f6c121aa"),
+        "18.18.2-linux_ppc64le": ("node-v18.18.2-linux-ppc64le.tar.xz", "node-v18.18.2-linux-ppc64le", "b0adff5cf5938266b711d6c724fb134d802e0dee40b3a3f73d162de1b3d11880"),
+        "18.18.2-linux_s390x": ("node-v18.18.2-linux-s390x.tar.xz", "node-v18.18.2-linux-s390x", "c70ec2074b5e2b42c55bb4b8105418b67bf8a61c500d9376a07430dfcc341fdb"),
+        "18.18.2-linux_amd64": ("node-v18.18.2-linux-x64.tar.xz", "node-v18.18.2-linux-x64", "75aba25ae76999309fc6c598efe56ce53fbfc221381a44a840864276264ab8ac"),
+        "18.18.2-windows_amd64": ("node-v18.18.2-win-x64.zip", "node-v18.18.2-win-x64", "3bb0e51e579a41a22b3bf6cb2f3e79c03801aa17acbe0ca00fc555d1282e7acd"),
+    },
+    # We need at least Node 18.17 due to some transitive dependencies.
+    node_version = "18.18.2",
 )
 
 # Download npm dependencies.
@@ -80,7 +90,7 @@ yarn_install(
         "//:.yarnrc",
         "//:tools/npm-patches/@bazel+jasmine+5.8.1.patch",
         "//tools:postinstall-patches.js",
-        "//tools/esm-interop:patches/npm/@angular+build-tooling+0.0.0-0109d498b0f6aae418ed4924a5e5c65695f0ac61.patch",
+        "//tools/esm-interop:patches/npm/@angular+build-tooling+0.0.0-e0ec7b60641d7f6369be45d8d02663fd50f320be.patch",
         "//tools/esm-interop:patches/npm/@bazel+concatjs+5.8.1.patch",
         "//tools/esm-interop:patches/npm/@bazel+esbuild+5.7.1.patch",
         "//tools/esm-interop:patches/npm/@bazel+protractor+5.7.1.patch",
@@ -196,10 +206,10 @@ cldr_xml_data_repository(
 # sass rules
 http_archive(
     name = "io_bazel_rules_sass",
-    sha256 = "81758d485da797baca81fb07e2b14a818e33c539beaddeb373054b5c39807010",
-    strip_prefix = "rules_sass-63d77ffdf3039aae1f0bb54e05ff47b7c50f1553",
+    sha256 = "5633816e996a79c77f44306f6228b9ef18fc2ecb412d63b4e314a132225facba",
+    strip_prefix = "rules_sass-79bd239ce77c101ea1aed575678020bd2999f17d",
     urls = [
-        "https://github.com/bazelbuild/rules_sass/archive/63d77ffdf3039aae1f0bb54e05ff47b7c50f1553.zip",
+        "https://github.com/bazelbuild/rules_sass/archive/79bd239ce77c101ea1aed575678020bd2999f17d.zip",
     ],
 )
 

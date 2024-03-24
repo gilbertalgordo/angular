@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import ts from 'typescript/lib/tsserverlibrary';
+import ts from 'typescript';
 
 import {NgLanguageService, PluginConfig} from './api';
 
@@ -24,7 +24,7 @@ export const factory: ts.server.PluginModuleFactory = (tsModule): PluginModule =
       return plugin.create(info);
     },
     getExternalFiles(project: ts.server.Project): string[] {
-      return plugin?.getExternalFiles?.(project) ?? [];
+      return plugin?.getExternalFiles?.(project, ts.ProgramUpdateLevel.Full) ?? [];
     },
     onConfigurationChanged(config: PluginConfig): void {
       plugin?.onConfigurationChanged?.(config);

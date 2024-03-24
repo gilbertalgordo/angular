@@ -58,16 +58,16 @@ This required setting tells Angular that `HTTP_INTERCEPTORS` is a token for a *m
 Because interceptors are optional dependencies of the `HttpClient` service, you must provide them in the same injector or a parent of the injector that provides `HttpClient`.
 Interceptors provided *after* DI creates the `HttpClient` are ignored.
 
-This app provides `HttpClient` in the app's root injector by adding the `HttpClientModule` to the `providers` array of the `boostrapApplication()` in `main.ts`.
+This app provides `HttpClient` in the app's root injector by adding the `HttpClientModule` to the `providers` array of the `ApplicationConfig` in `app.config.ts`.
 You should provide interceptors there as well.
 
-<code-example path="http/src/main.ts" region="noop-provider"></code-example>
+<code-example header="app.config.ts (excerpt)" path="http/src/app/app.config.ts" region="noop-provider"></code-example>
 
 ## Providing many interceptors
 
 There's a good chance that you'll create more interceptors.
 
-You *could* add each provider to the `providers` array of the `boostrapApplication()` as you did for the `NoopInterceptor`.
+You *could* add each provider to the `providers` array of the `bootstrapApplication()` as you did for the `NoopInterceptor`.
 
 That's rather verbose and there's a good chance that you'll make a bookkeeping mistake trying to remember to add each one.
 
@@ -83,9 +83,9 @@ These interceptors are defined in the complete sample code.
 
 </div>
 
-Then import this array and add it to the `bootstrapApplication()` `providers` in `main.ts` like this:
+Then import this array and add it to the `ApplicationConfig` `providers` in `app.config.ts` like this:
 
-<code-example header="main.ts (interceptor providers)" path="http/src/main.ts" region="interceptor-providers"></code-example>
+<code-example header="main.ts (interceptor providers)" path="http/src/app/app.config.ts" region="interceptor-providers"></code-example>
 
 As you create new interceptors, add them to the `httpInterceptorProviders` array and you won't have to revisit `main.ts`.
 

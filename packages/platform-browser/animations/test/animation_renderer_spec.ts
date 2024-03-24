@@ -6,12 +6,13 @@
  * found in the LICENSE file at https://angular.io/license
  */
 import {animate, AnimationPlayer, AnimationTriggerMetadata, style, transition, trigger} from '@angular/animations';
-import {ɵAnimationEngine as AnimationEngine} from '@angular/animations/browser';
+import {ɵAnimationEngine as AnimationEngine, ɵAnimationRendererFactory as AnimationRendererFactory,} from '@angular/animations/browser';
 import {APP_INITIALIZER, Component, destroyPlatform, importProvidersFrom, Injectable, NgModule, NgZone, RendererFactory2, RendererType2, ViewChild} from '@angular/core';
 import {TestBed} from '@angular/core/testing';
 import {bootstrapApplication} from '@angular/platform-browser';
 import {platformBrowserDynamic} from '@angular/platform-browser-dynamic';
-import {BrowserAnimationsModule, ɵAnimationRendererFactory as AnimationRendererFactory, ɵInjectableAnimationEngine as InjectableAnimationEngine} from '@angular/platform-browser/animations';
+import {BrowserAnimationsModule, ɵInjectableAnimationEngine as InjectableAnimationEngine} from '@angular/platform-browser/animations';
+import {provideAnimationsAsync} from '@angular/platform-browser/animations/async';
 import {DomRendererFactory2} from '@angular/platform-browser/src/dom/dom_renderer';
 import {withBody} from '@angular/private/testing';
 
@@ -440,6 +441,25 @@ describe('destroy', () => {
            }
          ]
        });
+
+       const root = document.body.querySelector('app-root')!;
+       expect(root.textContent).toEqual('app-root content');
+       expect(document.body.childNodes.length).toEqual(3);
+
+       appRef.destroy();
+
+       expect(document.body.querySelector('app-root')).toBeFalsy();  // host element is removed
+       expect(document.body.childNodes.length).toEqual(2);           // other elements are
+     }));
+
+  it('should clear bootstrapped component contents when async animations are used',
+     withBody('<div>before</div><app-root></app-root><div>after</div>', async () => {
+       @Component({selector: 'app-root', template: 'app-root content', standalone: true})
+       class AppComponent {
+       }
+
+       const appRef =
+           await bootstrapApplication(AppComponent, {providers: [provideAnimationsAsync()]});
 
        const root = document.body.querySelector('app-root')!;
        expect(root.textContent).toEqual('app-root content');

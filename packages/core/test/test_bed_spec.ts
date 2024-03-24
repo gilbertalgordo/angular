@@ -6,7 +6,8 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {APP_INITIALIZER, ChangeDetectorRef, Compiler, Component, Directive, ElementRef, ErrorHandler, getNgModuleById, inject, Inject, Injectable, InjectFlags, InjectionToken, InjectOptions, Injector, Input, LOCALE_ID, ModuleWithProviders, NgModule, Optional, Pipe, Type, ViewChild, ɵsetClassMetadata as setClassMetadata, ɵɵdefineComponent as defineComponent, ɵɵdefineInjector as defineInjector, ɵɵdefineNgModule as defineNgModule, ɵɵelementEnd as elementEnd, ɵɵelementStart as elementStart, ɵɵsetNgModuleScope as setNgModuleScope, ɵɵtext as text} from '@angular/core';
+import {PLATFORM_BROWSER_ID} from '@angular/common/src/platform_id';
+import {APP_INITIALIZER, ChangeDetectorRef, Compiler, Component, Directive, ElementRef, ErrorHandler, getNgModuleById, inject, Inject, Injectable, InjectFlags, InjectionToken, InjectOptions, Injector, Input, LOCALE_ID, ModuleWithProviders, NgModule, Optional, Pipe, PLATFORM_ID, Type, ViewChild, ɵsetClassMetadata as setClassMetadata, ɵɵdefineComponent as defineComponent, ɵɵdefineInjector as defineInjector, ɵɵdefineNgModule as defineNgModule, ɵɵelementEnd as elementEnd, ɵɵelementStart as elementStart, ɵɵsetNgModuleScope as setNgModuleScope, ɵɵtext as text} from '@angular/core';
 import {DeferBlockBehavior} from '@angular/core/testing';
 import {TestBed, TestBedImpl} from '@angular/core/testing/src/test_bed';
 import {By} from '@angular/platform-browser';
@@ -175,6 +176,56 @@ describe('TestBed with Standalone types', () => {
     TestBed.resetTestingModule();
   });
 
+  it('should override dependencies of standalone components', () => {
+    @Component({
+      selector: 'dep',
+      standalone: true,
+      template: 'main dep',
+    })
+    class MainDep {
+    }
+
+    @Component({
+      selector: 'dep',
+      standalone: true,
+      template: 'mock dep',
+    })
+    class MockDep {
+    }
+
+    @Component({
+      selector: 'app-root',
+      standalone: true,
+      imports: [MainDep],
+      template: '<dep />',
+    })
+    class AppComponent {
+    }
+
+    TestBed.configureTestingModule({imports: [AppComponent]});
+
+    let fixture = TestBed.createComponent(AppComponent);
+    fixture.detectChanges();
+
+    // No overrides defined, expecting main dependency to be used.
+    expect(fixture.nativeElement.innerHTML).toBe('<dep>main dep</dep>');
+
+    // Emulate an end of a test.
+    TestBed.resetTestingModule();
+
+    // Emulate the start of a next test, make sure previous overrides
+    // are not persisted across tests.
+    TestBed.configureTestingModule({imports: [AppComponent]});
+    TestBed.overrideComponent(AppComponent, {set: {imports: [MockDep]}});
+
+    fixture = TestBed.createComponent(AppComponent);
+    fixture.detectChanges();
+
+    // Main dependency was overridden, expect to see a mock.
+    expect(fixture.nativeElement.innerHTML).toBe('<dep>mock dep</dep>');
+  });
+
+
   it('should override providers on standalone component itself', () => {
     const A = new InjectionToken('A');
 
@@ -196,6 +247,57 @@ describe('TestBed with Standalone types', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.innerHTML).toBe('Overridden A');
+  });
+
+  it('should override providers on components used as standalone component dependency', () => {
+    @Injectable()
+    class Service {
+      id = 'Service(original)';
+    }
+
+    @Injectable()
+    class MockService {
+      id = 'Service(mock)';
+    }
+
+    @Component({
+      selector: 'dep',
+      standalone: true,
+      template: '{{ service.id }}',
+      providers: [Service],
+    })
+    class Dep {
+      service = inject(Service);
+    }
+
+    @Component({
+      standalone: true,
+      template: '<dep />',
+      imports: [Dep],
+    })
+    class MyStandaloneComp {
+    }
+
+    TestBed.configureTestingModule({imports: [MyStandaloneComp]});
+    TestBed.overrideProvider(Service, {useFactory: () => new MockService()});
+
+    let fixture = TestBed.createComponent(MyStandaloneComp);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.innerHTML).toBe('<dep>Service(mock)</dep>');
+
+    // Emulate an end of a test.
+    TestBed.resetTestingModule();
+
+    // Emulate the start of a next test, make sure previous overrides
+    // are not persisted across tests.
+    TestBed.configureTestingModule({imports: [MyStandaloneComp]});
+
+    fixture = TestBed.createComponent(MyStandaloneComp);
+    fixture.detectChanges();
+
+    // No provider overrides, expect original provider value to be used.
+    expect(fixture.nativeElement.innerHTML).toBe('<dep>Service(original)</dep>');
   });
 
   it('should override providers in standalone component dependencies via overrideProvider', () => {
@@ -1477,7 +1579,7 @@ describe('TestBed', () => {
      * class ComponentClass {}
      *
      * This is needed to closer match the behavior of AOT pre-compiled components (compiled
-     * outside of TestBed) for cases when `{#defer}` blocks are used.
+     * outside of TestBed) for cases when defer blocks are used.
      */
     const getAOTCompiledComponent =
         (selector: string, dependencies: Array<Type<unknown>> = [],
@@ -1554,15 +1656,90 @@ describe('TestBed', () => {
           .toBe('Override of a root template! Override of a nested template! CmpA!');
     });
 
-    it('should allow import overrides on components with async metadata', async () => {
-      @Component({
-        standalone: true,
-        selector: 'cmp-a',
-        template: 'CmpA!',
-      })
-      class CmpA {
+    it('should override providers on dependencies of dynamically loaded components', async () => {
+      function timer(delay: number): Promise<void> {
+        return new Promise<void>((resolve) => {
+          setTimeout(() => resolve(), delay);
+        });
       }
 
+      @Injectable({providedIn: 'root'})
+      class ImportantService {
+        value = 'original';
+      }
+
+      @NgModule({
+        providers: [ImportantService],
+      })
+      class ThisModuleProvidesService {
+      }
+
+      @Component({
+        standalone: true,
+        selector: 'child',
+        imports: [ThisModuleProvidesService],
+        template: '<h1>{{value}}</h1>',
+      })
+      class ChildCmp {
+        service = inject(ImportantService);
+        value = this.service.value;
+      }
+
+      @Component({
+        standalone: true,
+        selector: 'parent',
+        imports: [ChildCmp],
+        template: `
+          @defer (when true) {
+            <child />
+          }
+        `,
+      })
+      class ParentCmp {
+      }
+
+      const deferrableDependencies = [ChildCmp];
+      setClassMetadataAsync(
+          ParentCmp,
+          function() {
+            const promises: Array<Promise<Type<unknown>>> = deferrableDependencies.map(
+                // Emulates a dynamic import, e.g. `import('./cmp-a').then(m => m.CmpA)`
+                dep => new Promise((resolve) => setTimeout(() => resolve(dep))));
+            return promises;
+          },
+          function(...deferrableSymbols) {
+            setClassMetadata(
+                ParentCmp, [{
+                  type: Component,
+                  args: [{
+                    selector: 'parent',
+                    standalone: true,
+                    imports: [...deferrableSymbols],
+                    template: `<div>root cmp!</div>`,
+                  }]
+                }],
+                null, null);
+          });
+
+      // Set `PLATFORM_ID` to a browser platform value to trigger defer loading
+      // while running tests in Node.
+      const COMMON_PROVIDERS = [{provide: PLATFORM_ID, useValue: PLATFORM_BROWSER_ID}];
+
+      TestBed.configureTestingModule({imports: [ParentCmp], providers: [COMMON_PROVIDERS]});
+      TestBed.overrideProvider(ImportantService, {useValue: {value: 'overridden'}});
+
+      await TestBed.compileComponents();
+
+      const fixture = TestBed.createComponent(ParentCmp);
+      fixture.detectChanges();
+
+      await timer(10);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain('overridden');
+    });
+
+    it('should allow import overrides on components with async metadata', async () => {
       const NestedAotComponent = getAOTCompiledComponent('nested-cmp', [], []);
       const RootAotComponent = getAOTCompiledComponent('root', [], []);
 
@@ -2048,20 +2225,20 @@ describe('TestBed defer block behavior', () => {
     TestBed.resetTestingModule();
   });
 
-  it('should default defer block behavior to manual', () => {
-    expect(TestBedImpl.INSTANCE.getDeferBlockBehavior()).toBe(DeferBlockBehavior.Manual);
+  it('should default defer block behavior to playthrough', () => {
+    expect(TestBedImpl.INSTANCE.getDeferBlockBehavior()).toBe(DeferBlockBehavior.Playthrough);
   });
 
   it('should be able to configure defer block behavior', () => {
-    TestBed.configureTestingModule({deferBlockBehavior: DeferBlockBehavior.Playthrough});
-    expect(TestBedImpl.INSTANCE.getDeferBlockBehavior()).toBe(DeferBlockBehavior.Playthrough);
+    TestBed.configureTestingModule({deferBlockBehavior: DeferBlockBehavior.Manual});
+    expect(TestBedImpl.INSTANCE.getDeferBlockBehavior()).toBe(DeferBlockBehavior.Manual);
   });
 
   it('should reset the defer block behavior back to the default when TestBed is reset', () => {
-    TestBed.configureTestingModule({deferBlockBehavior: DeferBlockBehavior.Playthrough});
-    expect(TestBedImpl.INSTANCE.getDeferBlockBehavior()).toBe(DeferBlockBehavior.Playthrough);
-    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({deferBlockBehavior: DeferBlockBehavior.Manual});
     expect(TestBedImpl.INSTANCE.getDeferBlockBehavior()).toBe(DeferBlockBehavior.Manual);
+    TestBed.resetTestingModule();
+    expect(TestBedImpl.INSTANCE.getDeferBlockBehavior()).toBe(DeferBlockBehavior.Playthrough);
   });
 });
 

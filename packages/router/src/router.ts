@@ -7,26 +7,56 @@
  */
 
 import {Location} from '@angular/common';
-import {inject, Injectable, NgZone, Type, ɵConsole as Console, ɵInitialRenderPendingTasks as InitialRenderPendingTasks, ɵRuntimeError as RuntimeError, ɵWritable as Writable} from '@angular/core';
+import {
+  inject,
+  Injectable,
+  NgZone,
+  Type,
+  ɵConsole as Console,
+  ɵPendingTasks as PendingTasks,
+  ɵRuntimeError as RuntimeError,
+} from '@angular/core';
 import {Observable, Subject, Subscription, SubscriptionLike} from 'rxjs';
 
 import {createSegmentGroupFromRoute, createUrlTreeFromSegmentGroup} from './create_url_tree';
 import {INPUT_BINDER} from './directives/router_outlet';
 import {RuntimeErrorCode} from './errors';
-import {BeforeActivateRoutes, Event, IMPERATIVE_NAVIGATION, NavigationCancel, NavigationCancellationCode, NavigationEnd, NavigationTrigger, PrivateRouterEvents, RedirectRequest} from './events';
+import {
+  BeforeActivateRoutes,
+  Event,
+  IMPERATIVE_NAVIGATION,
+  NavigationCancel,
+  NavigationCancellationCode,
+  NavigationEnd,
+  NavigationTrigger,
+  PrivateRouterEvents,
+  RedirectRequest,
+} from './events';
 import {NavigationBehaviorOptions, OnSameUrlNavigation, Routes} from './models';
-import {isBrowserTriggeredNavigation, Navigation, NavigationExtras, NavigationTransitions, RestoredState, UrlCreationOptions} from './navigation_transition';
+import {
+  isBrowserTriggeredNavigation,
+  Navigation,
+  NavigationExtras,
+  NavigationTransitions,
+  RestoredState,
+  UrlCreationOptions,
+} from './navigation_transition';
 import {RouteReuseStrategy} from './route_reuse_strategy';
 import {ROUTER_CONFIGURATION} from './router_config';
 import {ROUTES} from './router_config_loader';
 import {Params} from './shared';
-import {StateManager} from './state_manager';
+import {StateManager} from './statemanager/state_manager';
 import {UrlHandlingStrategy} from './url_handling_strategy';
-import {containsTree, IsActiveMatchOptions, isUrlTree, UrlSegmentGroup, UrlSerializer, UrlTree} from './url_tree';
+import {
+  containsTree,
+  IsActiveMatchOptions,
+  isUrlTree,
+  UrlSegmentGroup,
+  UrlSerializer,
+  UrlTree,
+} from './url_tree';
 import {standardizeConfig, validateConfig} from './utils/config';
 import {afterNextNavigation} from './utils/navigations';
-
-
 
 function defaultErrorHandler(error: any): never {
   throw error;
@@ -40,7 +70,7 @@ export const exactMatchOptions: IsActiveMatchOptions = {
   paths: 'exact',
   fragment: 'ignored',
   matrixParams: 'ignored',
-  queryParams: 'exact'
+  queryParams: 'exact',
 };
 
 /**
@@ -51,7 +81,7 @@ export const subsetMatchOptions: IsActiveMatchOptions = {
   paths: 'subset',
   fragment: 'ignored',
   matrixParams: 'ignored',
-  queryParams: 'subset'
+  queryParams: 'subset',
 };
 
 /**
@@ -69,19 +99,19 @@ export const subsetMatchOptions: IsActiveMatchOptions = {
 @Injectable({providedIn: 'root'})
 export class Router {
   private get currentUrlTree() {
-    return this.stateManager.currentUrlTree;
+    return this.stateManager.getCurrentUrlTree();
   }
   private get rawUrlTree() {
-    return this.stateManager.rawUrlTree;
+    return this.stateManager.getRawUrlTree();
   }
   private disposed = false;
-  private locationSubscription?: SubscriptionLike;
+  private nonRouterCurrentEntryChangeSubscription?: SubscriptionLike;
   private isNgZoneEnabled = false;
 
   private readonly console = inject(Console);
   private readonly stateManager = inject(StateManager);
   private readonly options = inject(ROUTER_CONFIGURATION, {optional: true}) || {};
-  private readonly pendingTasks = inject(InitialRenderPendingTasks);
+  private readonly pendingTasks = inject(PendingTasks);
   private readonly urlUpdateStrategy = this.options.urlUpdateStrategy || 'deferred';
   private readonly navigationTransitions = inject(NavigationTransitions);
   private readonly urlSerializer = inject(UrlSerializer);
@@ -108,7 +138,7 @@ export class Router {
    * The current state of routing in this NgModule.
    */
   get routerState() {
-    return this.stateManager.routerState;
+    return this.stateManager.getRouterState();
   }
 
   /**
@@ -160,26 +190,29 @@ export class Router {
 
     this.resetConfig(this.config);
 
-    this.navigationTransitions.setupNavigations(this, this.currentUrlTree, this.routerState)
-        .subscribe({
-          error: (e) => {
-            this.console.warn(ngDevMode ? `Unhandled Navigation Error: ${e}` : e);
-          }
-        });
+    this.navigationTransitions
+      .setupNavigations(this, this.currentUrlTree, this.routerState)
+      .subscribe({
+        error: (e) => {
+          this.console.warn(ngDevMode ? `Unhandled Navigation Error: ${e}` : e);
+        },
+      });
     this.subscribeToNavigationEvents();
   }
 
-
   private eventsSubscription = new Subscription();
   private subscribeToNavigationEvents() {
-    const subscription = this.navigationTransitions.events.subscribe(e => {
+    const subscription = this.navigationTransitions.events.subscribe((e) => {
       try {
         const currentTransition = this.navigationTransitions.currentTransition;
         const currentNavigation = this.navigationTransitions.currentNavigation;
         if (currentTransition !== null && currentNavigation !== null) {
-          this.stateManager.handleNavigationEvent(e, currentNavigation);
-          if (e instanceof NavigationCancel && e.code !== NavigationCancellationCode.Redirect &&
-              e.code !== NavigationCancellationCode.SupersededByNewNavigation) {
+          this.stateManager.handleRouterEvent(e, currentNavigation);
+          if (
+            e instanceof NavigationCancel &&
+            e.code !== NavigationCancellationCode.Redirect &&
+            e.code !== NavigationCancellationCode.SupersededByNewNavigation
+          ) {
             // It seems weird that `navigated` is set to `true` when the navigation is rejected,
             // however it's how things were written initially. Investigation would need to be done
             // to determine if this can be removed.
@@ -187,22 +220,30 @@ export class Router {
           } else if (e instanceof NavigationEnd) {
             this.navigated = true;
           } else if (e instanceof RedirectRequest) {
-            const mergedTree =
-                this.urlHandlingStrategy.merge(e.url, currentTransition.currentRawUrl);
+            const opts = e.navigationBehaviorOptions;
+            const mergedTree = this.urlHandlingStrategy.merge(
+              e.url,
+              currentTransition.currentRawUrl,
+            );
             const extras = {
+              // Persist transient navigation info from the original navigation request.
+              info: currentTransition.extras.info,
               skipLocationChange: currentTransition.extras.skipLocationChange,
               // The URL is already updated at this point if we have 'eager' URL
               // updates or if the navigation was triggered by the browser (back
               // button, URL bar, etc). We want to replace that item in history
               // if the navigation is rejected.
-              replaceUrl: this.urlUpdateStrategy === 'eager' ||
-                  isBrowserTriggeredNavigation(currentTransition.source)
+              replaceUrl:
+                this.urlUpdateStrategy === 'eager' ||
+                isBrowserTriggeredNavigation(currentTransition.source),
+              // allow developer to override default options with RedirectCommand
+              ...opts,
             };
 
             this.scheduleNavigation(mergedTree, IMPERATIVE_NAVIGATION, null, extras, {
               resolve: currentTransition.resolve,
               reject: currentTransition.reject,
-              promise: currentTransition.promise
+              promise: currentTransition.promise,
             });
           }
         }
@@ -233,8 +274,11 @@ export class Router {
   initialNavigation(): void {
     this.setUpLocationChangeListener();
     if (!this.navigationTransitions.hasRequestedNavigation) {
-      const state = this.location.getState() as RestoredState;
-      this.navigateToSyncWithBrowser(this.location.path(true), IMPERATIVE_NAVIGATION, state);
+      this.navigateToSyncWithBrowser(
+        this.location.path(true),
+        IMPERATIVE_NAVIGATION,
+        this.stateManager.restoredState(),
+      );
     }
   }
 
@@ -247,18 +291,14 @@ export class Router {
     // Don't need to use Zone.wrap any more, because zone.js
     // already patch onPopState, so location change callback will
     // run into ngZone
-    if (!this.locationSubscription) {
-      this.locationSubscription = this.location.subscribe(event => {
-        const source = event['type'] === 'popstate' ? 'popstate' : 'hashchange';
-        if (source === 'popstate') {
-          // The `setTimeout` was added in #12160 and is likely to support Angular/AngularJS
-          // hybrid apps.
-          setTimeout(() => {
-            this.navigateToSyncWithBrowser(event['url']!, source, event.state);
-          }, 0);
-        }
+    this.nonRouterCurrentEntryChangeSubscription ??=
+      this.stateManager.registerNonRouterCurrentEntryChangeListener((url, state) => {
+        // The `setTimeout` was added in #12160 and is likely to support Angular/AngularJS
+        // hybrid apps.
+        setTimeout(() => {
+          this.navigateToSyncWithBrowser(url, 'popstate', state);
+        }, 0);
       });
-    }
   }
 
   /**
@@ -269,7 +309,10 @@ export class Router {
    * the Router needs to respond to ensure its internal state matches.
    */
   private navigateToSyncWithBrowser(
-      url: string, source: NavigationTrigger, state: RestoredState|undefined) {
+    url: string,
+    source: NavigationTrigger,
+    state: RestoredState | null | undefined,
+  ) {
     const extras: NavigationExtras = {replaceUrl: true};
 
     // TODO: restoredState should always include the entire state, regardless
@@ -306,7 +349,7 @@ export class Router {
    * Returns the current `Navigation` object when the router is navigating,
    * and `null` when idle.
    */
-  getCurrentNavigation(): Navigation|null {
+  getCurrentNavigation(): Navigation | null {
     return this.navigationTransitions.currentNavigation;
   }
 
@@ -314,7 +357,7 @@ export class Router {
    * The `Navigation` object of the most recent navigation to succeed and `null` if there
    *     has not been a successful navigation yet.
    */
-  get lastSuccessfulNavigation(): Navigation|null {
+  get lastSuccessfulNavigation(): Navigation | null {
     return this.navigationTransitions.lastSuccessfulNavigation;
   }
 
@@ -348,9 +391,9 @@ export class Router {
   /** Disposes of the router. */
   dispose(): void {
     this.navigationTransitions.complete();
-    if (this.locationSubscription) {
-      this.locationSubscription.unsubscribe();
-      this.locationSubscription = undefined;
+    if (this.nonRouterCurrentEntryChangeSubscription) {
+      this.nonRouterCurrentEntryChangeSubscription.unsubscribe();
+      this.nonRouterCurrentEntryChangeSubscription = undefined;
     }
     this.disposed = true;
     this.eventsSubscription.unsubscribe();
@@ -406,9 +449,9 @@ export class Router {
    */
   createUrlTree(commands: any[], navigationExtras: UrlCreationOptions = {}): UrlTree {
     const {relativeTo, queryParams, fragment, queryParamsHandling, preserveFragment} =
-        navigationExtras;
+      navigationExtras;
     const f = preserveFragment ? this.currentUrlTree.fragment : fragment;
-    let q: Params|null = null;
+    let q: Params | null = null;
     switch (queryParamsHandling) {
       case 'merge':
         q = {...this.currentUrlTree.queryParams, ...queryParams};
@@ -423,7 +466,7 @@ export class Router {
       q = this.removeEmptyProps(q);
     }
 
-    let relativeToUrlSegmentGroup: UrlSegmentGroup|undefined;
+    let relativeToUrlSegmentGroup: UrlSegmentGroup | undefined;
     try {
       const relativeToSnapshot = relativeTo ? relativeTo.snapshot : this.routerState.snapshot.root;
       relativeToUrlSegmentGroup = createSegmentGroupFromRoute(relativeToSnapshot);
@@ -433,7 +476,7 @@ export class Router {
       // Note: the difference between having this fallback for invalid `ActivatedRoute` setups and
       // just throwing is ~500 test failures. Fixing all of those tests by hand is not feasible at
       // the moment.
-      if (typeof commands[0] !== 'string' || !commands[0].startsWith('/')) {
+      if (typeof commands[0] !== 'string' || commands[0][0] !== '/') {
         // Navigations that were absolute in the old way of creating UrlTrees
         // would still work because they wouldn't attempt to match the
         // segments in the `ActivatedRoute` to the `currentUrlTree` but
@@ -472,13 +515,17 @@ export class Router {
    * @see [Routing and Navigation guide](guide/router)
    *
    */
-  navigateByUrl(url: string|UrlTree, extras: NavigationBehaviorOptions = {
-    skipLocationChange: false
-  }): Promise<boolean> {
+  navigateByUrl(
+    url: string | UrlTree,
+    extras: NavigationBehaviorOptions = {
+      skipLocationChange: false,
+    },
+  ): Promise<boolean> {
     if (typeof ngDevMode === 'undefined' || ngDevMode) {
       if (this.isNgZoneEnabled && !NgZone.isInAngularZone()) {
         this.console.warn(
-            `Navigation triggered outside Angular zone, did you forget to call 'ngZone.run()'?`);
+          `Navigation triggered outside Angular zone, did you forget to call 'ngZone.run()'?`,
+        );
       }
     }
 
@@ -500,9 +547,9 @@ export class Router {
    * @param extras An options object that determines how the URL should be constructed or
    *     interpreted.
    *
-   * @returns A Promise that resolves to `true` when navigation succeeds, to `false` when navigation
-   *     fails,
-   * or is rejected on error.
+   * @returns A Promise that resolves to `true` when navigation succeeds, or `false` when navigation
+   *     fails. The Promise is rejected when an error occurs if `resolveNavigationPromiseOnError` is
+   * not `true`.
    *
    * @usageNotes
    *
@@ -518,8 +565,10 @@ export class Router {
    * @see [Routing and Navigation guide](guide/router)
    *
    */
-  navigate(commands: any[], extras: NavigationExtras = {skipLocationChange: false}):
-      Promise<boolean> {
+  navigate(
+    commands: any[],
+    extras: NavigationExtras = {skipLocationChange: false},
+  ): Promise<boolean> {
     validateCommands(commands);
     return this.navigateByUrl(this.createUrlTree(commands, extras), extras);
   }
@@ -549,14 +598,14 @@ export class Router {
    * - The equivalent for `false` is
    * `{paths: 'subset', queryParams: 'subset', fragment: 'ignored', matrixParams: 'ignored'}`.
    */
-  isActive(url: string|UrlTree, exact: boolean): boolean;
+  isActive(url: string | UrlTree, exact: boolean): boolean;
   /**
    * Returns whether the url is activated.
    */
-  isActive(url: string|UrlTree, matchOptions: IsActiveMatchOptions): boolean;
+  isActive(url: string | UrlTree, matchOptions: IsActiveMatchOptions): boolean;
   /** @internal */
-  isActive(url: string|UrlTree, matchOptions: boolean|IsActiveMatchOptions): boolean;
-  isActive(url: string|UrlTree, matchOptions: boolean|IsActiveMatchOptions): boolean {
+  isActive(url: string | UrlTree, matchOptions: boolean | IsActiveMatchOptions): boolean;
+  isActive(url: string | UrlTree, matchOptions: boolean | IsActiveMatchOptions): boolean {
     let options: IsActiveMatchOptions;
     if (matchOptions === true) {
       options = {...exactMatchOptions};
@@ -574,8 +623,7 @@ export class Router {
   }
 
   private removeEmptyProps(params: Params): Params {
-    return Object.keys(params).reduce((result: Params, key: string) => {
-      const value: any = params[key];
+    return Object.entries(params).reduce((result: Params, [key, value]: [string, any]) => {
       if (value !== null && value !== undefined) {
         result[key] = value;
       }
@@ -584,9 +632,12 @@ export class Router {
   }
 
   private scheduleNavigation(
-      rawUrl: UrlTree, source: NavigationTrigger, restoredState: RestoredState|null,
-      extras: NavigationExtras,
-      priorPromise?: {resolve: any, reject: any, promise: Promise<boolean>}): Promise<boolean> {
+    rawUrl: UrlTree,
+    source: NavigationTrigger,
+    restoredState: RestoredState | null,
+    extras: NavigationExtras,
+    priorPromise?: {resolve: any; reject: any; promise: Promise<boolean>},
+  ): Promise<boolean> {
     if (this.disposed) {
       return Promise.resolve(false);
     }
@@ -624,7 +675,7 @@ export class Router {
       reject,
       promise,
       currentSnapshot: this.routerState.snapshot,
-      currentRouterState: this.routerState
+      currentRouterState: this.routerState,
     });
 
     // Make sure that the error is propagated even though `processNavigations` catch
@@ -640,13 +691,14 @@ function validateCommands(commands: string[]): void {
     const cmd = commands[i];
     if (cmd == null) {
       throw new RuntimeError(
-          RuntimeErrorCode.NULLISH_COMMAND,
-          (typeof ngDevMode === 'undefined' || ngDevMode) &&
-              `The requested path contains ${cmd} segment at index ${i}`);
+        RuntimeErrorCode.NULLISH_COMMAND,
+        (typeof ngDevMode === 'undefined' || ngDevMode) &&
+          `The requested path contains ${cmd} segment at index ${i}`,
+      );
     }
   }
 }
 
-function isPublicRouterEvent(e: Event|PrivateRouterEvents): e is Event {
-  return (!(e instanceof BeforeActivateRoutes) && !(e instanceof RedirectRequest));
+function isPublicRouterEvent(e: Event | PrivateRouterEvents): e is Event {
+  return !(e instanceof BeforeActivateRoutes) && !(e instanceof RedirectRequest);
 }

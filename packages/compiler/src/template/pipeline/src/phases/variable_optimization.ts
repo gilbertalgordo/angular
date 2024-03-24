@@ -28,13 +28,22 @@ import {CompilationJob} from '../compilation';
  * To guarantee correctness, analysis of "fences" in the instruction lists is used to determine
  * which optimizations are safe to perform.
  */
-export function phaseVariableOptimization(job: CompilationJob): void {
+export function optimizeVariables(job: CompilationJob): void {
   for (const unit of job.units) {
+    inlineAlwaysInlineVariables(unit.create);
+    inlineAlwaysInlineVariables(unit.update);
+
+    for (const op of unit.create) {
+      if (op.kind === ir.OpKind.Listener || op.kind === ir.OpKind.TwoWayListener) {
+        inlineAlwaysInlineVariables(op.handlerOps);
+      }
+    }
+
     optimizeVariablesInOpList(unit.create, job.compatibility);
     optimizeVariablesInOpList(unit.update, job.compatibility);
 
     for (const op of unit.create) {
-      if (op.kind === ir.OpKind.Listener) {
+      if (op.kind === ir.OpKind.Listener || op.kind === ir.OpKind.TwoWayListener) {
         optimizeVariablesInOpList(op.handlerOps, job.compatibility);
       }
     }
@@ -66,7 +75,7 @@ enum Fence {
    * Note that all `ContextWrite` fences are implicitly `ContextRead` fences as operations which
    * change the view context do so based on the current one.
    */
-  ViewContextWrite = 0b011,
+  ViewContextWrite = 0b010,
 
   /**
    * Indicates that a call is required for its side-effects, even if nothing reads its result.
@@ -93,6 +102,33 @@ interface OpInfo {
    * Flags indicating any `Fence`s present for this operation.
    */
   fences: Fence;
+}
+
+function inlineAlwaysInlineVariables(ops: ir.OpList<ir.CreateOp|ir.UpdateOp>): void {
+  const vars = new Map<ir.XrefId, ir.VariableOp<ir.CreateOp|ir.UpdateOp>>();
+  for (const op of ops) {
+    if (op.kind === ir.OpKind.Variable && op.flags & ir.VariableFlags.AlwaysInline) {
+      ir.visitExpressionsInOp(op, expr => {
+        if (ir.isIrExpression(expr) && fencesForIrExpression(expr) !== Fence.None) {
+          throw new Error(`AssertionError: A context-sensitive variable was marked AlwaysInline`);
+        }
+      });
+      vars.set(op.xref, op);
+    }
+
+    ir.transformExpressionsInOp(op, expr => {
+      if (expr instanceof ir.ReadVariableExpr && vars.has(expr.xref)) {
+        const varOp = vars.get(expr.xref)!;
+        // Inline by cloning, because we might inline into multiple places.
+        return varOp.initializer.clone();
+      }
+      return expr;
+    }, ir.VisitorContextFlag.None);
+  }
+
+  for (const op of vars.values()) {
+    ir.OpList.remove(op as ir.CreateOp | ir.UpdateOp);
+  }
 }
 
 /**
@@ -174,10 +210,14 @@ function optimizeVariablesInOpList(
   // Next, inline any remaining variables with exactly one usage.
   const toInline: ir.XrefId[] = [];
   for (const [id, count] of varUsages) {
+    const decl = varDecls.get(id)!;
     // We can inline variables that:
-    //  - are used once
+    //  - are used exactly once, and
     //  - are not used remotely
-    if (count !== 1) {
+    // OR
+    //  - are marked for always inlining
+    const isAlwaysInline = !!(decl.flags & ir.VariableFlags.AlwaysInline);
+    if (count !== 1 || isAlwaysInline) {
       // We can't inline this variable as it's used more than once.
       continue;
     }
@@ -196,6 +236,12 @@ function optimizeVariablesInOpList(
     // no future operation will make inlining legal.
     const decl = varDecls.get(candidate)!;
     const varInfo = opMap.get(decl as ir.CreateOp | ir.UpdateOp)!;
+    const isAlwaysInline = !!(decl.flags & ir.VariableFlags.AlwaysInline);
+
+    if (isAlwaysInline) {
+      throw new Error(
+          `AssertionError: Found an 'AlwaysInline' variable after the always inlining pass.`);
+    }
 
     // Scan operations following the variable declaration and look for the point where that variable
     // is used. There should only be one usage given the precondition above.
@@ -257,9 +303,9 @@ function optimizeVariablesInOpList(
 function fencesForIrExpression(expr: ir.Expression): Fence {
   switch (expr.kind) {
     case ir.ExpressionKind.NextContext:
-      return Fence.ViewContextWrite;
+      return Fence.ViewContextRead | Fence.ViewContextWrite;
     case ir.ExpressionKind.RestoreView:
-      return Fence.ViewContextWrite | Fence.SideEffectful;
+      return Fence.ViewContextRead | Fence.ViewContextWrite | Fence.SideEffectful;
     case ir.ExpressionKind.Reference:
       return Fence.ViewContextRead;
     default:
@@ -432,6 +478,13 @@ function allowConservativeInlining(
   // that behavior here.
   switch (decl.variable.kind) {
     case ir.SemanticVariableKind.Identifier:
+      if (decl.initializer instanceof o.ReadVarExpr && decl.initializer.name === 'ctx') {
+        // Although TemplateDefinitionBuilder is cautious about inlining, we still want to do so
+        // when the variable is the context, to imitate its behavior with aliases in control flow
+        // blocks. This quirky behavior will become dead code once compatibility mode is no longer
+        // supported.
+        return true;
+      }
       return false;
     case ir.SemanticVariableKind.Context:
       // Context can only be inlined into other variables.

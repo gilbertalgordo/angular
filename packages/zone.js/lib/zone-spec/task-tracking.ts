@@ -6,13 +6,15 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {ZoneType} from '../zone-impl';
+
 /**
  * A `TaskTrackingZoneSpec` allows one to track all outstanding Tasks.
  *
  * This is useful in tests. For example to see which tasks are preventing a test from completing
  * or an automated way of releasing all of the event listeners at the end of the test.
  */
-class TaskTrackingZoneSpec implements ZoneSpec {
+export class TaskTrackingZoneSpec implements ZoneSpec {
   name = 'TaskTrackingZone';
   microTasks: Task[] = [];
   macroTasks: Task[] = [];
@@ -77,6 +79,8 @@ class TaskTrackingZoneSpec implements ZoneSpec {
   }
 }
 
-// Export the class so that new instances can be created with proper
-// constructor params.
-(Zone as any)['TaskTrackingZoneSpec'] = TaskTrackingZoneSpec;
+export function patchTaskTracking(Zone: ZoneType): void {
+  // Export the class so that new instances can be created with proper
+  // constructor params.
+  (Zone as any)['TaskTrackingZoneSpec'] = TaskTrackingZoneSpec;
+}

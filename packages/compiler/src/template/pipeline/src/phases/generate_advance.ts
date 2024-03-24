@@ -13,19 +13,19 @@ import type {CompilationJob} from '../compilation';
  * Generate `ir.AdvanceOp`s in between `ir.UpdateOp`s that ensure the runtime's implicit slot
  * context will be advanced correctly.
  */
-export function phaseGenerateAdvance(job: CompilationJob): void {
+export function generateAdvance(job: CompilationJob): void {
   for (const unit of job.units) {
     // First build a map of all of the declarations in the view that have assigned slots.
     const slotMap = new Map<ir.XrefId, number>();
     for (const op of unit.create) {
       if (!ir.hasConsumesSlotTrait(op)) {
         continue;
-      } else if (op.slot === null) {
+      } else if (op.handle.slot === null) {
         throw new Error(
             `AssertionError: expected slots to have been allocated before generating advance() calls`);
       }
 
-      slotMap.set(op.xref, op.slot);
+      slotMap.set(op.xref, op.handle.slot);
     }
 
     // Next, step through the update operations and generate `ir.AdvanceOp`s as required to ensure
@@ -41,7 +41,7 @@ export function phaseGenerateAdvance(job: CompilationJob): void {
       } else if (!slotMap.has(op.target)) {
         // We expect ops that _do_ depend on the slot counter to point at declarations that exist in
         // the `slotMap`.
-        throw new Error(`AssertionError: reference to unknown slot for var ${op.target}`);
+        throw new Error(`AssertionError: reference to unknown slot for target ${op.target}`);
       }
 
       const slot = slotMap.get(op.target)!;

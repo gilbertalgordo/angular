@@ -5,15 +5,9 @@
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-import {types as t} from '@babel/core';
-import parser from '@babel/parser';
-import _template from '@babel/template';
+import {parse, template, types as t} from '@babel/core';
 
 import {BabelAstHost} from '../../src/ast/babel_ast_host';
-
-// Babel is a CJS package and misuses the `default` named binding:
-// https://github.com/babel/babel/issues/15269.
-const template = (_template as any)['default'] as typeof _template;
 
 describe('BabelAstHost', () => {
   let host: BabelAstHost;
@@ -280,6 +274,23 @@ describe('BabelAstHost', () => {
     });
   });
 
+  describe('parseParameters()', () => {
+    it('should return the parameters as an array of expressions', () => {
+      expect(host.parseParameters(rhs('x = function(a, b) {}'))).toEqual([expr('a'), expr('b')]);
+      expect(host.parseParameters(rhs('x = (a, b) => {}'))).toEqual([expr('a'), expr('b')]);
+    });
+
+    it('should error if the node is not a function declaration or arrow function', () => {
+      expect(() => host.parseParameters(expr('[]')))
+          .toThrowError('Unsupported syntax, expected a function.');
+    });
+
+    it('should error if a parameter uses spread syntax', () => {
+      expect(() => host.parseParameters(rhs('x = function(a, ...other) {}')))
+          .toThrowError('Unsupported syntax, expected an identifier.');
+    });
+  });
+
   describe('isCallExpression()', () => {
     it('should return true if the expression is a call expression', () => {
       expect(host.isCallExpression(expr('foo()'))).toBe(true);
@@ -331,8 +342,8 @@ describe('BabelAstHost', () => {
 
   describe('getRange()', () => {
     it('should extract the range from the expression', () => {
-      const file = parser.parse('// preamble\nx = \'moo\';');
-      const stmt = file.program.body[0] as t.Statement;
+      const file = parse('// preamble\nx = \'moo\';');
+      const stmt = file!.program.body[0] as t.Statement;
       assertExpressionStatement(stmt);
       assertAssignmentExpression(stmt.expression);
       expect(host.getRange(stmt.expression.right))

@@ -1,4 +1,3 @@
-
 /**
  * @license
  * Copyright Google LLC All Rights Reserved.
@@ -8,7 +7,8 @@
  */
 
 import {Injector} from '../di/injector';
-import {ViewRef} from '../linker/view_ref';
+import type {ViewRef} from '../linker/view_ref';
+import {getComponent} from '../render3/util/discovery_utils';
 import {LContainer} from '../render3/interfaces/container';
 import {getDocument} from '../render3/interfaces/document';
 import {RElement, RNode} from '../render3/interfaces/renderer_dom';
@@ -17,13 +17,13 @@ import {HEADER_OFFSET, LView, TVIEW, TViewType} from '../render3/interfaces/view
 import {makeStateKey, TransferState} from '../transfer_state';
 import {assertDefined} from '../util/assert';
 
-import {CONTAINERS, DehydratedView, DISCONNECTED_NODES, ELEMENT_CONTAINERS, MULTIPLIER, NUM_ROOT_NODES, SerializedContainerView, SerializedView} from './interfaces';
+import {CONTAINERS, DehydratedView, DISCONNECTED_NODES, ELEMENT_CONTAINERS, MULTIPLIER, NUM_ROOT_NODES, SerializedContainerView, SerializedView,} from './interfaces';
 
 /**
  * The name of the key used in the TransferState collection,
  * where hydration information is located.
  */
-const TRANSFER_STATE_TOKEN_ID = '__ɵnghData__';
+const TRANSFER_STATE_TOKEN_ID = '__nghData__';
 
 /**
  * Lookup key used to reference DOM hydration data (ngh) in `TransferState`.
@@ -43,7 +43,6 @@ export const NGH_ATTR_NAME = 'ngh';
 export const SSR_CONTENT_INTEGRITY_MARKER = 'nghm';
 
 export const enum TextNodeMarker {
-
   /**
    * The contents of the text comment added to nodes that would otherwise be
    * empty when serialized by the server and passed to the client. The empty
@@ -72,11 +71,13 @@ export const enum TextNodeMarker {
  * @param injector Injector that this component has access to.
  * @param isRootView Specifies whether we trying to read hydration info for the root view.
  */
-let _retrieveHydrationInfoImpl: typeof retrieveHydrationInfoImpl =
-    (rNode: RElement, injector: Injector, isRootView?: boolean) => null;
+let _retrieveHydrationInfoImpl: typeof retrieveHydrationInfoImpl = () => null;
 
 export function retrieveHydrationInfoImpl(
-    rNode: RElement, injector: Injector, isRootView = false): DehydratedView|null {
+    rNode: RElement,
+    injector: Injector,
+    isRootView = false,
+    ): DehydratedView|null {
   let nghAttrValue = rNode.getAttribute(NGH_ATTR_NAME);
   if (nghAttrValue == null) return null;
 
@@ -96,7 +97,8 @@ export function retrieveHydrationInfoImpl(
 
   // We've read one of the ngh ids, keep the remaining one, so that
   // we can set it back on the DOM element.
-  const remainingNgh = isRootView ? componentViewNgh : (rootViewNgh ? `|${rootViewNgh}` : '');
+  const rootNgh = rootViewNgh ? `|${rootViewNgh}` : '';
+  const remainingNgh = isRootView ? componentViewNgh : rootNgh;
 
   let data: SerializedView = {};
   // An element might have an empty `ngh` attribute value (e.g. `<comp ngh="" />`),
@@ -168,7 +170,10 @@ export function enableRetrieveHydrationInfoImpl() {
  * and accessing a corresponding slot in TransferState storage.
  */
 export function retrieveHydrationInfo(
-    rNode: RElement, injector: Injector, isRootView = false): DehydratedView|null {
+    rNode: RElement,
+    injector: Injector,
+    isRootView = false,
+    ): DehydratedView|null {
   return _retrieveHydrationInfoImpl(rNode, injector, isRootView);
 }
 
@@ -217,7 +222,7 @@ export function processTextNodeMarkersBeforeHydration(node: HTMLElement) {
       const isTextNodeMarker =
           content === TextNodeMarker.EmptyNode || content === TextNodeMarker.Separator;
       return isTextNodeMarker ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-    }
+    },
   });
   let currentNode: Comment;
   // We cannot modify the DOM while using the commentIterator,
@@ -226,7 +231,7 @@ export function processTextNodeMarkersBeforeHydration(node: HTMLElement) {
   // applying the changes to the DOM: either inserting an empty node
   // or just removing the marker if it was used as a separator.
   const nodes = [];
-  while (currentNode = commentNodesIterator.nextNode() as Comment) {
+  while ((currentNode = commentNodesIterator.nextNode() as Comment)) {
     nodes.push(currentNode);
   }
   for (const node of nodes) {
@@ -242,9 +247,35 @@ export function processTextNodeMarkersBeforeHydration(node: HTMLElement) {
  * Internal type that represents a claimed node.
  * Only used in dev mode.
  */
-type ClaimedNode = {
-  __claimed?: boolean;
+export enum HydrationStatus {
+  Hydrated = 'hydrated',
+  Skipped = 'skipped',
+  Mismatched = 'mismatched',
+}
+
+// clang-format off
+export type HydrationInfo = {
+  status: HydrationStatus.Hydrated|HydrationStatus.Skipped;
+}|{
+  status: HydrationStatus.Mismatched;
+  actualNodeDetails: string|null;
+  expectedNodeDetails: string|null
 };
+// clang-format on
+
+const HYDRATION_INFO_KEY = '__ngDebugHydrationInfo__';
+
+export type HydratedNode = {
+  [HYDRATION_INFO_KEY]?: HydrationInfo;
+};
+
+function patchHydrationInfo(node: RNode, info: HydrationInfo) {
+  (node as HydratedNode)[HYDRATION_INFO_KEY] = info;
+}
+
+export function readHydrationInfo(node: RNode): HydrationInfo|null {
+  return (node as HydratedNode)[HYDRATION_INFO_KEY] ?? null;
+}
 
 /**
  * Marks a node as "claimed" by hydration process.
@@ -255,21 +286,64 @@ export function markRNodeAsClaimedByHydration(node: RNode, checkIfAlreadyClaimed
   if (!ngDevMode) {
     throw new Error(
         'Calling `markRNodeAsClaimedByHydration` in prod mode ' +
-        'is not supported and likely a mistake.');
+            'is not supported and likely a mistake.',
+    );
   }
   if (checkIfAlreadyClaimed && isRNodeClaimedForHydration(node)) {
     throw new Error('Trying to claim a node, which was claimed already.');
   }
-  (node as ClaimedNode).__claimed = true;
+  patchHydrationInfo(node, {status: HydrationStatus.Hydrated});
   ngDevMode.hydratedNodes++;
 }
 
+export function markRNodeAsSkippedByHydration(node: RNode) {
+  if (!ngDevMode) {
+    throw new Error(
+        'Calling `markRNodeAsSkippedByHydration` in prod mode ' +
+            'is not supported and likely a mistake.',
+    );
+  }
+  patchHydrationInfo(node, {status: HydrationStatus.Skipped});
+  ngDevMode.componentsSkippedHydration++;
+}
+
+export function markRNodeAsHavingHydrationMismatch(
+    node: RNode,
+    expectedNodeDetails: string|null = null,
+    actualNodeDetails: string|null = null,
+) {
+  if (!ngDevMode) {
+    throw new Error(
+        'Calling `markRNodeAsMismatchedByHydration` in prod mode ' +
+            'is not supported and likely a mistake.',
+    );
+  }
+
+  // The RNode can be a standard HTMLElement (not an Angular component or directive)
+  // The devtools component tree only displays Angular components & directives
+  // Therefore we attach the debug info to the closest component/directive
+  while (node && !getComponent(node as Element)) {
+    node = node?.parentNode as RNode;
+  }
+
+  if (node) {
+    patchHydrationInfo(node, {
+      status: HydrationStatus.Mismatched,
+      expectedNodeDetails,
+      actualNodeDetails,
+    });
+  }
+}
+
 export function isRNodeClaimedForHydration(node: RNode): boolean {
-  return !!(node as ClaimedNode).__claimed;
+  return readHydrationInfo(node)?.status === HydrationStatus.Hydrated;
 }
 
 export function setSegmentHead(
-    hydrationInfo: DehydratedView, index: number, node: RNode|null): void {
+    hydrationInfo: DehydratedView,
+    index: number,
+    node: RNode|null,
+    ): void {
   hydrationInfo.segmentHeads ??= {};
   hydrationInfo.segmentHeads[index] = node;
 }
@@ -299,7 +373,9 @@ export function getNgContainerSize(hydrationInfo: DehydratedView, index: number)
 }
 
 export function getSerializedContainerViews(
-    hydrationInfo: DehydratedView, index: number): SerializedContainerView[]|null {
+    hydrationInfo: DehydratedView,
+    index: number,
+    ): SerializedContainerView[]|null {
   return hydrationInfo.data[CONTAINERS]?.[index] ?? null;
 }
 
@@ -325,7 +401,7 @@ export function isDisconnectedNode(hydrationInfo: DehydratedView, index: number)
   // Check if we are processing disconnected info for the first time.
   if (typeof hydrationInfo.disconnectedNodes === 'undefined') {
     const nodeIds = hydrationInfo.data[DISCONNECTED_NODES];
-    hydrationInfo.disconnectedNodes = nodeIds ? (new Set(nodeIds)) : null;
+    hydrationInfo.disconnectedNodes = nodeIds ? new Set(nodeIds) : null;
   }
   return !!hydrationInfo.disconnectedNodes?.has(index);
 }

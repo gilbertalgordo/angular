@@ -30,6 +30,11 @@ const INTERFACE_EXCEPTIONS = new Set<string>([
 const AOT_ONLY = new Set<string>([
   'ɵsetClassMetadata',
   'ɵsetClassMetadataAsync',
+
+  // used in type-checking.
+  'ɵINPUT_SIGNAL_BRAND_WRITE_TYPE',
+  'ɵUnwrapDirectiveSignalInputs',
+  'ɵunwrapWritableSignal',
 ]);
 
 /**
@@ -39,6 +44,7 @@ const AOT_ONLY = new Set<string>([
 const PARTIAL_ONLY = new Set<string>([
   'ɵɵngDeclareDirective',
   'ɵɵngDeclareClassMetadata',
+  'ɵɵngDeclareClassMetadataAsync',
   'ɵɵngDeclareComponent',
   'ɵɵngDeclareFactory',
   'ɵɵngDeclareInjectable',

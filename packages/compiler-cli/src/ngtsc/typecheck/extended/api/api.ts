@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {AST, ASTWithSource, ParseSourceSpan, RecursiveAstVisitor, TmplAstBoundAttribute, TmplAstBoundDeferredTrigger, TmplAstBoundEvent, TmplAstBoundText, TmplAstContent, TmplAstDeferredBlock, TmplAstDeferredBlockError, TmplAstDeferredBlockLoading, TmplAstDeferredBlockPlaceholder, TmplAstDeferredTrigger, TmplAstElement, TmplAstForLoopBlock, TmplAstForLoopBlockEmpty, TmplAstIcu, TmplAstIfBlock, TmplAstIfBlockBranch, TmplAstNode, TmplAstRecursiveVisitor, TmplAstReference, TmplAstSwitchBlock, TmplAstSwitchBlockCase, TmplAstTemplate, TmplAstText, TmplAstTextAttribute, TmplAstVariable} from '@angular/compiler';
+import {AST, ASTWithSource, ParseSourceSpan, RecursiveAstVisitor, TmplAstBoundAttribute, TmplAstBoundDeferredTrigger, TmplAstBoundEvent, TmplAstBoundText, TmplAstContent, TmplAstDeferredBlock, TmplAstDeferredBlockError, TmplAstDeferredBlockLoading, TmplAstDeferredBlockPlaceholder, TmplAstDeferredTrigger, TmplAstElement, TmplAstForLoopBlock, TmplAstForLoopBlockEmpty, TmplAstIcu, TmplAstIfBlock, TmplAstIfBlockBranch, TmplAstNode, TmplAstRecursiveVisitor, TmplAstReference, TmplAstSwitchBlock, TmplAstSwitchBlockCase, TmplAstTemplate, TmplAstText, TmplAstTextAttribute, TmplAstUnknownBlock, TmplAstVariable} from '@angular/compiler';
 import ts from 'typescript';
 
 import {NgCompilerOptions} from '../../../core/api';
@@ -147,6 +147,7 @@ class TemplateVisitor<Code extends ErrorCode> extends RecursiveAstVisitor implem
   visitVariable(variable: TmplAstVariable): void {}
   visitReference(reference: TmplAstReference): void {}
   visitTextAttribute(attribute: TmplAstTextAttribute): void {}
+  visitUnknownBlock(block: TmplAstUnknownBlock): void {}
   visitBoundAttribute(attribute: TmplAstBoundAttribute): void {
     this.visitAst(attribute.value);
   }
@@ -194,7 +195,7 @@ class TemplateVisitor<Code extends ErrorCode> extends RecursiveAstVisitor implem
 
   visitForLoopBlock(block: TmplAstForLoopBlock): void {
     block.item.visit(this);
-    this.visitAllNodes(Object.values(block.contextVariables));
+    this.visitAllNodes(block.contextVariables);
     this.visitAst(block.expression);
     this.visitAllNodes(block.children);
     block.empty?.visit(this);

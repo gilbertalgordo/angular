@@ -9,16 +9,15 @@
 import {ConstantPool} from '@angular/compiler';
 import ts from 'typescript';
 
-import {DefaultImportTracker, ImportRewriter} from '../../imports';
+import {DefaultImportTracker, ImportRewriter, LocalCompilationExtraImportsTracker} from '../../imports';
 import {getDefaultImportDeclaration} from '../../imports/src/default';
 import {PerfPhase, PerfRecorder} from '../../perf';
 import {Decorator, ReflectionHost} from '../../reflection';
-import {ImportManager, RecordWrappedNodeFn, translateExpression, translateStatement, TranslatorOptions} from '../../translator';
+import {ImportManager, presetImportManagerForceNamespaceImports, RecordWrappedNodeFn, translateExpression, translateStatement, TranslatorOptions} from '../../translator';
 import {visit, VisitListEntryResult, Visitor} from '../../util/src/visitor';
 
 import {CompileResult} from './api';
 import {TraitCompiler} from './compilation';
-import {addImports} from './utils';
 
 const NO_DECORATORS = new Set<ts.Decorator>();
 
@@ -35,7 +34,9 @@ interface FileOverviewMeta {
 
 export function ivyTransformFactory(
     compilation: TraitCompiler, reflector: ReflectionHost, importRewriter: ImportRewriter,
-    defaultImportTracker: DefaultImportTracker, perf: PerfRecorder, isCore: boolean,
+    defaultImportTracker: DefaultImportTracker,
+    localCompilationExtraImportsTracker: LocalCompilationExtraImportsTracker|null,
+    perf: PerfRecorder, isCore: boolean,
     isClosureCompilerEnabled: boolean): ts.TransformerFactory<ts.SourceFile> {
   const recordWrappedNode = createRecorderFn(defaultImportTracker);
   return (context: ts.TransformationContext): ts.Transformer<ts.SourceFile> => {
@@ -43,8 +44,8 @@ export function ivyTransformFactory(
       return perf.inPhase(
           PerfPhase.Compile,
           () => transformIvySourceFile(
-              compilation, context, reflector, importRewriter, file, isCore,
-              isClosureCompilerEnabled, recordWrappedNode));
+              compilation, context, reflector, importRewriter, localCompilationExtraImportsTracker,
+              file, isCore, isClosureCompilerEnabled, recordWrappedNode));
     };
   };
 }
@@ -116,6 +117,10 @@ class IvyTransformationVisitor extends Visitor {
     const statements: ts.Statement[] = [];
     const members = [...node.members];
 
+    // Note: Class may be already transformed by e.g. Tsickle and
+    // not have a direct reference to the source file.
+    const sourceFile = ts.getOriginalNode(node).getSourceFile();
+
     for (const field of this.classCompilationMap.get(node)!) {
       // Type-only member.
       if (field.initializer === null) {
@@ -123,7 +128,8 @@ class IvyTransformationVisitor extends Visitor {
       }
 
       // Translate the initializer for the field into TS nodes.
-      const exprNode = translateExpression(field.initializer, this.importManager, translateOptions);
+      const exprNode =
+          translateExpression(sourceFile, field.initializer, this.importManager, translateOptions);
 
       // Create a static property declaration for the new field.
       const property = ts.factory.createPropertyDeclaration(
@@ -140,7 +146,8 @@ class IvyTransformationVisitor extends Visitor {
             /* hasTrailingNewLine */ false);
       }
 
-      field.statements.map(stmt => translateStatement(stmt, this.importManager, translateOptions))
+      field.statements
+          .map(stmt => translateStatement(sourceFile, stmt, this.importManager, translateOptions))
           .forEach(stmt => statements.push(stmt));
 
       members.push(property);
@@ -279,11 +286,13 @@ class IvyTransformationVisitor extends Visitor {
  */
 function transformIvySourceFile(
     compilation: TraitCompiler, context: ts.TransformationContext, reflector: ReflectionHost,
-    importRewriter: ImportRewriter, file: ts.SourceFile, isCore: boolean,
-    isClosureCompilerEnabled: boolean,
+    importRewriter: ImportRewriter,
+    localCompilationExtraImportsTracker: LocalCompilationExtraImportsTracker|null,
+    file: ts.SourceFile, isCore: boolean, isClosureCompilerEnabled: boolean,
     recordWrappedNode: RecordWrappedNodeFn<ts.Expression>): ts.SourceFile {
   const constantPool = new ConstantPool(isClosureCompilerEnabled);
-  const importManager = new ImportManager(importRewriter);
+  const importManager =
+      new ImportManager({...presetImportManagerForceNamespaceImports, rewriter: importRewriter});
 
   // The transformation process consists of 2 steps:
   //
@@ -310,7 +319,7 @@ function transformIvySourceFile(
   // to the ImportManager.
   const downlevelTranslatedCode = getLocalizeCompileTarget(context) < ts.ScriptTarget.ES2015;
   const constants =
-      constantPool.statements.map(stmt => translateStatement(stmt, importManager, {
+      constantPool.statements.map(stmt => translateStatement(file, stmt, importManager, {
                                     recordWrappedNode,
                                     downlevelTaggedTemplates: downlevelTranslatedCode,
                                     downlevelVariableDeclarations: downlevelTranslatedCode,
@@ -321,11 +330,18 @@ function transformIvySourceFile(
   // result of adding extra imports and constant pool statements.
   const fileOverviewMeta = isClosureCompilerEnabled ? getFileOverviewComment(sf.statements) : null;
 
+  // Add extra imports.
+  if (localCompilationExtraImportsTracker !== null) {
+    for (const moduleName of localCompilationExtraImportsTracker.getImportsForFile(sf)) {
+      importManager.addSideEffectImport(sf, moduleName);
+    }
+  }
+
   // Add new imports for this file.
-  sf = addImports(importManager, sf, constants);
+  sf = importManager.transformTsFile(context, sf, constants);
 
   if (fileOverviewMeta !== null) {
-    setFileOverviewComment(sf, fileOverviewMeta);
+    sf = insertFileOverviewComment(sf, fileOverviewMeta);
   }
 
   return sf;
@@ -366,7 +382,8 @@ function getFileOverviewComment(statements: ts.NodeArray<ts.Statement>): FileOve
   return null;
 }
 
-function setFileOverviewComment(sf: ts.SourceFile, fileoverview: FileOverviewMeta): void {
+function insertFileOverviewComment(
+    sf: ts.SourceFile, fileoverview: FileOverviewMeta): ts.SourceFile {
   const {comments, host, trailing} = fileoverview;
   // If host statement is no longer the first one, it means that extra statements were added at the
   // very beginning, so we need to relocate @fileoverview comment and cleanup the original statement
@@ -377,8 +394,17 @@ function setFileOverviewComment(sf: ts.SourceFile, fileoverview: FileOverviewMet
     } else {
       ts.setSyntheticLeadingComments(host, undefined);
     }
-    ts.setSyntheticLeadingComments(sf.statements[0], comments);
+
+    // Note: Do not use the first statement as it may be elided at runtime.
+    // E.g. an import declaration that is type only.
+    const commentNode = ts.factory.createNotEmittedStatement(sf);
+    ts.setSyntheticLeadingComments(commentNode, comments);
+
+    return ts.factory.updateSourceFile(
+        sf, [commentNode, ...sf.statements], sf.isDeclarationFile, sf.referencedFiles,
+        sf.typeReferenceDirectives, sf.hasNoDefaultLib, sf.libReferenceDirectives);
   }
+  return sf;
 }
 
 function maybeFilterDecorator(

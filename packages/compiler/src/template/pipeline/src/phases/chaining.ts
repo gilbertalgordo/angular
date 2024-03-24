@@ -12,14 +12,20 @@ import * as ir from '../../ir';
 import {CompilationJob} from '../compilation';
 
 const CHAINABLE = new Set([
-  R3.elementStart,
-  R3.elementEnd,
-  R3.element,
-  R3.property,
-  R3.hostProperty,
-  R3.syntheticHostProperty,
-  R3.styleProp,
   R3.attribute,
+  R3.classProp,
+  R3.element,
+  R3.elementContainer,
+  R3.elementContainerEnd,
+  R3.elementContainerStart,
+  R3.elementEnd,
+  R3.elementStart,
+  R3.hostProperty,
+  R3.i18nExp,
+  R3.listener,
+  R3.listener,
+  R3.property,
+  R3.styleProp,
   R3.stylePropInterpolate1,
   R3.stylePropInterpolate2,
   R3.stylePropInterpolate3,
@@ -29,14 +35,11 @@ const CHAINABLE = new Set([
   R3.stylePropInterpolate7,
   R3.stylePropInterpolate8,
   R3.stylePropInterpolateV,
-  R3.classProp,
-  R3.listener,
-  R3.elementContainerStart,
-  R3.elementContainerEnd,
-  R3.elementContainer,
-  R3.listener,
   R3.syntheticHostListener,
+  R3.syntheticHostProperty,
   R3.templateCreate,
+  R3.twoWayProperty,
+  R3.twoWayListener,
 ]);
 
 /**
@@ -56,7 +59,7 @@ const CHAINABLE = new Set([
  * elementStart(0, 'div')(1, 'span');
  * ```
  */
-export function phaseChaining(job: CompilationJob): void {
+export function chain(job: CompilationJob): void {
   for (const unit of job.units) {
     chainOperationsInList(unit.create);
     chainOperationsInList(unit.update);

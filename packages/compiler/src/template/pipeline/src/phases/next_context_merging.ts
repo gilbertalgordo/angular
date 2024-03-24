@@ -23,10 +23,10 @@ import type {CompilationJob} from '../compilation';
  *     is, the call is purely side-effectful).
  *   * No operations in between them uses the implicit context.
  */
-export function phaseMergeNextContext(job: CompilationJob): void {
+export function mergeNextContextExpressions(job: CompilationJob): void {
   for (const unit of job.units) {
     for (const op of unit.create) {
-      if (op.kind === ir.OpKind.Listener) {
+      if (op.kind === ir.OpKind.Listener || op.kind === ir.OpKind.TwoWayListener) {
         mergeNextContextsInOps(op.handlerOps);
       }
     }

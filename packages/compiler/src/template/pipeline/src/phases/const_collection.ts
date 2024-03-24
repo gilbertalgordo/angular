@@ -6,27 +6,28 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+
 import * as core from '../../../../core';
-import {splitNsName} from '../../../../ml_parser/tags';
 import * as o from '../../../../output/output_ast';
 import * as ir from '../../ir';
-import {HostBindingCompilationJob, type CompilationJob, ComponentCompilationJob} from '../compilation';
+
+import {ComponentCompilationJob, HostBindingCompilationJob, type CompilationJob} from '../compilation';
 import {literalOrArrayLiteral} from '../conversion';
-import {element} from '../instruction';
 
 /**
  * Converts the semantic attributes of element-like operations (elements, templates) into constant
  * array expressions, and lifts them into the overall component `consts`.
  */
-export function phaseConstCollection(job: CompilationJob): void {
+export function collectElementConsts(job: CompilationJob): void {
   // Collect all extracted attributes.
   const allElementAttributes = new Map<ir.XrefId, ElementAttributes>();
   for (const unit of job.units) {
     for (const op of unit.create) {
       if (op.kind === ir.OpKind.ExtractedAttribute) {
-        const attributes = allElementAttributes.get(op.target) || new ElementAttributes();
+        const attributes =
+            allElementAttributes.get(op.target) || new ElementAttributes(job.compatibility);
         allElementAttributes.set(op.target, attributes);
-        attributes.add(op.bindingKind, op.name, op.expression);
+        attributes.add(op.bindingKind, op.name, op.expression, op.namespace, op.trustedValueFn);
         ir.OpList.remove<ir.CreateOp>(op);
       }
     }
@@ -36,13 +37,24 @@ export function phaseConstCollection(job: CompilationJob): void {
   if (job instanceof ComponentCompilationJob) {
     for (const unit of job.units) {
       for (const op of unit.create) {
-        if (ir.isElementOrContainerOp(op)) {
+        // TODO: Simplify and combine these cases.
+        if (op.kind == ir.OpKind.Projection) {
           const attributes = allElementAttributes.get(op.xref);
           if (attributes !== undefined) {
             const attrArray = serializeAttributes(attributes);
             if (attrArray.entries.length > 0) {
-              op.attributes = job.addConst(attrArray);
+              op.attributes = attrArray;
             }
+          }
+        } else if (ir.isElementOrContainerOp(op)) {
+          op.attributes = getConstIndex(job, allElementAttributes, op.xref);
+
+          // TODO(dylhunn): `@for` loops with `@empty` blocks need to be special-cased here,
+          // because the slot consumer trait currently only supports one slot per consumer and we
+          // need two. This should be revisited when making the refactors mentioned in:
+          // https://github.com/angular/angular/pull/53620#discussion_r1430918822
+          if (op.kind === ir.OpKind.RepeaterCreate && op.emptyView !== null) {
+            op.emptyAttributes = getConstIndex(job, allElementAttributes, op.emptyView);
           }
         }
       }
@@ -63,6 +75,19 @@ export function phaseConstCollection(job: CompilationJob): void {
   }
 }
 
+function getConstIndex(
+    job: ComponentCompilationJob, allElementAttributes: Map<ir.XrefId, ElementAttributes>,
+    xref: ir.XrefId): ir.ConstIndex|null {
+  const attributes = allElementAttributes.get(xref);
+  if (attributes !== undefined) {
+    const attrArray = serializeAttributes(attributes);
+    if (attrArray.entries.length > 0) {
+      return job.addConst(attrArray);
+    }
+  }
+  return null;
+}
+
 /**
  * Shared instance of an empty array to avoid unnecessary array allocations.
  */
@@ -72,8 +97,13 @@ const FLYWEIGHT_ARRAY: ReadonlyArray<o.Expression> = Object.freeze<o.Expression[
  * Container for all of the various kinds of attributes which are applied on an element.
  */
 class ElementAttributes {
-  private known = new Set<string>();
-  private byKind = new Map<ir.BindingKind, o.Expression[]>;
+  private known = new Map<ir.BindingKind, Set<string>>();
+  private byKind = new Map<
+      // Property bindings are excluded here, because they need to be tracked in the same
+      // array to maintain their order. They're tracked in the `propertyBindings` array.
+      Exclude<ir.BindingKind, ir.BindingKind.Property|ir.BindingKind.TwoWayProperty>,
+      o.Expression[]>;
+  private propertyBindings: o.Expression[]|null = null;
 
   projectAs: string|null = null;
 
@@ -90,7 +120,7 @@ class ElementAttributes {
   }
 
   get bindings(): ReadonlyArray<o.Expression> {
-    return this.byKind.get(ir.BindingKind.Property) ?? FLYWEIGHT_ARRAY;
+    return this.propertyBindings ?? FLYWEIGHT_ARRAY;
   }
 
   get template(): ReadonlyArray<o.Expression> {
@@ -101,11 +131,31 @@ class ElementAttributes {
     return this.byKind.get(ir.BindingKind.I18n) ?? FLYWEIGHT_ARRAY;
   }
 
-  add(kind: ir.BindingKind, name: string, value: o.Expression|null): void {
-    if (this.known.has(name)) {
+  constructor(private compatibility: ir.CompatibilityMode) {}
+
+  private isKnown(kind: ir.BindingKind, name: string) {
+    const nameToValue = this.known.get(kind) ?? new Set<string>();
+    this.known.set(kind, nameToValue);
+    if (nameToValue.has(name)) {
+      return true;
+    }
+    nameToValue.add(name);
+    return false;
+  }
+
+  add(kind: ir.BindingKind, name: string, value: o.Expression|null, namespace: string|null,
+      trustedValueFn: o.Expression|null): void {
+    // TemplateDefinitionBuilder puts duplicate attribute, class, and style values into the consts
+    // array. This seems inefficient, we can probably keep just the first one or the last value
+    // (whichever actually gets applied when multiple values are listed for the same attribute).
+    const allowDuplicates = this.compatibility === ir.CompatibilityMode.TemplateDefinitionBuilder &&
+        (kind === ir.BindingKind.Attribute || kind === ir.BindingKind.ClassName ||
+         kind === ir.BindingKind.StyleProperty);
+    if (!allowDuplicates && this.isKnown(kind, name)) {
       return;
     }
-    this.known.add(name);
+
+    // TODO: Can this be its own phase
     if (name === 'ngProjectAs') {
       if (value === null || !(value instanceof o.LiteralExpr) || (value.value == null) ||
           (typeof value.value?.toString() !== 'string')) {
@@ -118,34 +168,45 @@ class ElementAttributes {
 
 
     const array = this.arrayFor(kind);
-    array.push(...getAttributeNameLiterals(name));
+    array.push(...getAttributeNameLiterals(namespace, name));
     if (kind === ir.BindingKind.Attribute || kind === ir.BindingKind.StyleProperty) {
       if (value === null) {
-        throw Error('Attribute & style element attributes must have a value');
+        throw Error('Attribute, i18n attribute, & style element attributes must have a value');
       }
-      array.push(value);
+      if (trustedValueFn !== null) {
+        if (!ir.isStringLiteral(value)) {
+          throw Error('AssertionError: extracted attribute value should be string literal');
+        }
+        array.push(o.taggedTemplate(
+            trustedValueFn, new o.TemplateLiteral([new o.TemplateLiteralElement(value.value)], []),
+            undefined, value.sourceSpan));
+      } else {
+        array.push(value);
+      }
     }
   }
 
   private arrayFor(kind: ir.BindingKind): o.Expression[] {
-    if (!this.byKind.has(kind)) {
-      this.byKind.set(kind, []);
+    if (kind === ir.BindingKind.Property || kind === ir.BindingKind.TwoWayProperty) {
+      this.propertyBindings ??= [];
+      return this.propertyBindings;
+    } else {
+      if (!this.byKind.has(kind)) {
+        this.byKind.set(kind, []);
+      }
+      return this.byKind.get(kind)!;
     }
-    return this.byKind.get(kind)!;
   }
 }
 
 /**
  * Gets an array of literal expressions representing the attribute's namespaced name.
  */
-function getAttributeNameLiterals(name: string): o.LiteralExpr[] {
-  const [attributeNamespace, attributeName] = splitNsName(name);
-  const nameLiteral = o.literal(attributeName);
+function getAttributeNameLiterals(namespace: string|null, name: string): o.LiteralExpr[] {
+  const nameLiteral = o.literal(name);
 
-  if (attributeNamespace) {
-    return [
-      o.literal(core.AttributeMarker.NamespaceURI), o.literal(attributeNamespace), nameLiteral
-    ];
+  if (namespace) {
+    return [o.literal(core.AttributeMarker.NamespaceURI), o.literal(namespace), nameLiteral];
   }
 
   return [nameLiteral];

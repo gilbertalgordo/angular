@@ -17,8 +17,8 @@ import {CompilationJob, CompilationUnit, ViewCompilationUnit} from '../compilati
  * Also matches `ir.RestoreViewExpr` expressions with the variables of their corresponding saved
  * views.
  */
-export function phaseResolveNames(cpl: CompilationJob): void {
-  for (const unit of cpl.units) {
+export function resolveNames(job: CompilationJob): void {
+  for (const unit of job.units) {
     processLexicalScope(unit, unit.create, null);
     processLexicalScope(unit, unit.update, null);
   }
@@ -42,6 +42,7 @@ function processLexicalScope(
       case ir.OpKind.Variable:
         switch (op.variable.kind) {
           case ir.SemanticVariableKind.Identifier:
+          case ir.SemanticVariableKind.Alias:
             // This variable represents some kind of identifier which can be used in the template.
             if (scope.has(op.variable.identifier)) {
               continue;
@@ -59,6 +60,7 @@ function processLexicalScope(
         }
         break;
       case ir.OpKind.Listener:
+      case ir.OpKind.TwoWayListener:
         // Listener functions have separate variable declarations, so process them as a separate
         // lexical scope.
         processLexicalScope(unit, op.handlerOps, savedView);
@@ -70,11 +72,11 @@ function processLexicalScope(
   // scope. Also, look for `ir.RestoreViewExpr`s and match them with the snapshotted view context
   // variable.
   for (const op of ops) {
-    if (op.kind == ir.OpKind.Listener) {
+    if (op.kind == ir.OpKind.Listener || op.kind === ir.OpKind.TwoWayListener) {
       // Listeners were already processed above with their own scopes.
       continue;
     }
-    ir.transformExpressionsInOp(op, (expr, flags) => {
+    ir.transformExpressionsInOp(op, (expr) => {
       if (expr instanceof ir.LexicalReadExpr) {
         // `expr` is a read of a name within the lexical scope of this view.
         // Either that name is defined within the current view, or it represents a property from the

@@ -6,7 +6,6 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import * as o from '../../../../output/output_ast';
 import * as ir from '../../ir';
 import type {CompilationJob} from '../compilation';
 
@@ -27,7 +26,7 @@ function lookupElement(
  * all descendants of that container. Therefore, we must emit `disableBindings` and `enableBindings`
  * instructions for every such container.
  */
-export function phaseNonbindable(job: CompilationJob): void {
+export function disableBindings(job: CompilationJob): void {
   const elements = new Map<ir.XrefId, ir.ElementOrContainerOps>();
   for (const view of job.units) {
     for (const op of view.create) {

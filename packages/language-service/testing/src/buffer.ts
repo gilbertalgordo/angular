@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import ts from 'typescript/lib/tsserverlibrary';
+import ts from 'typescript';
 
 import {LanguageService} from '../../src/language_service';
 
@@ -84,6 +84,10 @@ export class OpenBuffer {
 
   getTcb() {
     return this.ngLS.getTcb(this.scriptInfo.fileName, this._cursor);
+  }
+
+  getOutliningSpans() {
+    return this.ngLS.getOutliningSpans(this.scriptInfo.fileName);
   }
 
   getTemplateLocationForComponent() {

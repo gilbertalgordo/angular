@@ -12,7 +12,7 @@
     "name": "EnvironmentInjector"
   },
   {
-    "name": "INJECTOR2"
+    "name": "INJECTOR"
   },
   {
     "name": "INJECTOR_DEF_TYPES"
@@ -84,6 +84,9 @@
     "name": "_injectImplementation"
   },
   {
+    "name": "activeConsumer"
+  },
+  {
     "name": "createInjector"
   },
   {
@@ -148,6 +151,9 @@
   },
   {
     "name": "resolveForwardRef"
+  },
+  {
+    "name": "setActiveConsumer"
   },
   {
     "name": "setCurrentInjector"

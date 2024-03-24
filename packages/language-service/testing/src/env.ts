@@ -9,7 +9,7 @@
 import {getFileSystem} from '@angular/compiler-cli/src/ngtsc/file_system';
 import {MockFileSystem} from '@angular/compiler-cli/src/ngtsc/file_system/testing';
 import {loadStandardTestFiles} from '@angular/compiler-cli/src/ngtsc/testing';
-import ts from 'typescript/lib/tsserverlibrary';
+import ts from 'typescript';
 
 import {MockServerHost} from './host';
 import {Project, ProjectFiles, TestableOptions} from './project';
@@ -25,8 +25,8 @@ export class LanguageServiceTestEnv {
       throw new Error(`LanguageServiceTestEnvironment only works with a mock filesystem`);
     }
     fs.init(loadStandardTestFiles({
-      fakeCore: true,
       fakeCommon: true,
+      rxjs: true,
     }));
 
     const host = new MockServerHost(fs);

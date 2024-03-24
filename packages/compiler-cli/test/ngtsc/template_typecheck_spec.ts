@@ -17,7 +17,7 @@ import {factory as invalidBananaInBoxFactory} from '../../src/ngtsc/typecheck/ex
 
 import {NgtscTestEnvironment} from './env';
 
-const testFiles = loadStandardTestFiles({fakeCore: true, fakeCommon: true});
+const testFiles = loadStandardTestFiles({fakeCommon: true});
 
 runInEachFileSystem(() => {
   describe('ngtsc type checking', () => {
@@ -27,10 +27,10 @@ runInEachFileSystem(() => {
       env = NgtscTestEnvironment.setup(testFiles);
       env.tsconfig({fullTemplateTypeCheck: true});
       env.write('node_modules/@angular/animations/index.d.ts', `
-export declare class AnimationEvent {
-  element: any;
-}
-`);
+        export declare class AnimationEvent {
+          element: any;
+        }
+      `);
     });
 
     it('should check a simple component', () => {
@@ -67,6 +67,34 @@ export declare class AnimationEvent {
       const diags = env.driveDiagnostics();
       expect(diags.length).toBe(1);
       expect(getSourceCodeForDiagnostic(diags[0])).toBe('does_not_exist');
+    });
+
+    it('should not fail with a runtime error when generating TCB', () => {
+      env.tsconfig({strictTemplates: true});
+      env.write('test.ts', `
+        import {Component, input} from '@angular/core';
+
+        @Component({
+          selector: 'sub-cmp',
+          standalone: true,
+          template: '',
+        })
+        class Sub { // intentionally not exported
+          someInput = input.required<string>();
+        }
+
+        @Component({
+          template: \`<sub-cmp [someInput]="''" />\`,
+          standalone: true,
+          imports: [Sub],
+        })
+        export class MyComponent {}
+      `);
+
+      const diagnostics = env.driveDiagnostics();
+      expect(diagnostics).toEqual([jasmine.objectContaining(
+          {messageText: jasmine.objectContaining({messageText: 'Unable to import symbol Sub.'})},
+          )]);
     });
 
     it('should check regular attributes that are directive inputs', () => {
@@ -416,6 +444,97 @@ export declare class AnimationEvent {
       expect(diags[0].relatedInformation!.length).toBe(2);
       expect(getSourceCodeForDiagnostic(diags[0].relatedInformation![0])).toBe('ChildCmp');
       expect(getSourceCodeForDiagnostic(diags[0].relatedInformation![1])).toBe('ChildCmpDir');
+    });
+
+    it('should type check a two-way binding to a generic property', () => {
+      env.tsconfig({strictTemplates: true});
+      env.write('test.ts', `
+        import {Component, Directive, Input, Output, EventEmitter} from '@angular/core';
+
+        @Directive({selector: '[dir]', standalone: true})
+        export class Dir<T extends {id: string}> {
+          @Input() val!: T;
+          @Output() valChange = new EventEmitter<T>();
+        }
+
+        @Component({
+          template: '<input dir [(val)]="invalidType">',
+          standalone: true,
+          imports: [Dir],
+        })
+        export class FooCmp {
+          invalidType = {id: 1};
+        }
+      `);
+
+      const diags = env.driveDiagnostics();
+      expect(diags.length).toBe(1);
+      expect(diags[0].messageText)
+          .toEqual(`Type '{ id: number; }' is not assignable to type '{ id: string; }'.`);
+    });
+
+    it('should use the setter type when assigning using a two-way binding to an input with different getter and setter types',
+       () => {
+         env.tsconfig({strictTemplates: true});
+         env.write('test.ts', `
+            import {Component, Directive, Input, Output, EventEmitter} from '@angular/core';
+
+            @Directive({selector: '[dir]', standalone: true})
+            export class Dir {
+              @Input()
+              set val(value: string | null | undefined) {
+                this._val = value as string;
+              }
+              get val(): string {
+                return this._val;
+              }
+              private _val: string;
+
+              @Output() valChange = new EventEmitter<string>();
+            }
+
+            @Component({
+              template: '<input dir [(val)]="nullableType">',
+              standalone: true,
+              imports: [Dir],
+            })
+            export class FooCmp {
+              nullableType = null;
+            }
+          `);
+
+         const diags = env.driveDiagnostics();
+         expect(diags).toEqual([]);
+       });
+
+    it('should type check a two-way binding to a function value', () => {
+      env.tsconfig({strictTemplates: true});
+      env.write('test.ts', `
+        import {Component, Directive, Input, Output, EventEmitter} from '@angular/core';
+
+        type TestFn = (val: number | null | undefined) => string;
+
+        @Directive({selector: '[dir]', standalone: true})
+        export class Dir {
+          @Input() val!: TestFn;
+          @Output() valChange = new EventEmitter<TestFn>();
+        }
+
+        @Component({
+          template: '<input dir [(val)]="invalidType">',
+          standalone: true,
+          imports: [Dir],
+        })
+        export class FooCmp {
+          invalidType = (val: string) => 0;
+        }
+      `);
+
+      const diags = env.driveDiagnostics();
+      expect(diags.length).toBe(1);
+      expect(diags[0].messageText).toEqual(jasmine.objectContaining({
+        messageText: `Type '(val: string) => number' is not assignable to type 'TestFn'.`,
+      }));
     });
 
     describe('strictInputTypes', () => {
@@ -2317,6 +2436,72 @@ export declare class AnimationEvent {
           `    Type 'string' is not assignable to type 'number'.`
         ]);
       });
+
+      it('should type check inputs with transforms referring to an ambient type', () => {
+        env.tsconfig({strictTemplates: true});
+        env.write('test.ts', `
+          import {Component, Directive, NgModule, Input} from '@angular/core';
+
+          export class ElementRef<T> {
+            nativeElement: T;
+          }
+
+          @Directive({
+            selector: '[dir]',
+            standalone: true,
+          })
+          export class Dir {
+            @Input({transform: (val: HTMLInputElement | ElementRef<HTMLInputElement>) => {
+              return val instanceof ElementRef ? val.nativeElement.value : val.value;
+            }})
+            expectsInput: string | null = null;
+          }
+
+          @Component({
+            standalone: true,
+            imports: [Dir],
+            template: '<div dir [expectsInput]="someDiv"></div>',
+          })
+          export class App {
+            someDiv!: HTMLDivElement;
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(1);
+        expect(getDiagnosticLines(diags[0]).join('\n'))
+            .toContain(
+                `Type 'HTMLDivElement' is not assignable to type ` +
+                `'HTMLInputElement | ElementRef<HTMLInputElement>'`);
+      });
+
+      it('should type check a two-way binding to an input with a transform', () => {
+        env.tsconfig({strictTemplates: true});
+        env.write('test.ts', `
+          import {Component, Directive, Input, Output, EventEmitter} from '@angular/core';
+
+          export function toNumber(val: boolean | string) { return 1; }
+
+          @Directive({selector: '[dir]', standalone: true})
+          export class CoercionDir {
+            @Input({transform: toNumber}) val!: number;
+            @Output() valChange = new EventEmitter<number>();
+          }
+
+          @Component({
+            template: '<input dir [(val)]="invalidType">',
+            standalone: true,
+            imports: [CoercionDir],
+          })
+          export class FooCmp {
+            invalidType = 1;
+          }
+        `);
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(1);
+        expect(diags[0].messageText)
+            .toBe(`Type 'number' is not assignable to type 'string | boolean'.`);
+      });
     });
 
     describe('restricted inputs', () => {
@@ -3620,27 +3805,123 @@ suppress
         const diags = env.driveDiagnostics();
         expect(diags.length).toBe(1);
         expect(ts.flattenDiagnosticMessageText(diags[0].messageText, ''))
-            .toContain('HostBindDirective');
+            .toContain('Unable to import symbol HostBindDirective');
+      });
+
+      it('should check bindings to inherited host directive inputs', () => {
+        env.write('test.ts', `
+          import {Component, Directive, NgModule, Input} from '@angular/core';
+
+          @Directive({
+            standalone: true,
+          })
+          class HostDir {
+            @Input() input: number;
+            @Input() otherInput: string;
+          }
+
+          @Directive({
+            hostDirectives: [{directive: HostDir, inputs: ['input', 'otherInput: alias']}]
+          })
+          class Parent {}
+
+          @Directive({selector: '[dir]'})
+          class Dir extends Parent {}
+
+          @Component({
+            selector: 'test',
+            template: '<div dir [input]="person.name" [alias]="person.age"></div>',
+          })
+          class TestCmp {
+            person: {
+              name: string;
+              age: number;
+            };
+          }
+
+          @NgModule({
+            declarations: [TestCmp, Dir],
+          })
+          class Module {}
+        `);
+
+
+        const messages = env.driveDiagnostics().map(d => d.messageText);
+
+        expect(messages).toEqual([
+          `Type 'string' is not assignable to type 'number'.`,
+          `Type 'number' is not assignable to type 'string'.`
+        ]);
+      });
+
+      it('should check bindings to inherited host directive outputs', () => {
+        env.write('test.ts', `
+          import {Component, Directive, NgModule, Output, EventEmitter} from '@angular/core';
+
+          @Directive({
+            standalone: true,
+          })
+          class HostDir {
+            @Output() stringEvent = new EventEmitter<string>();
+            @Output() numberEvent = new EventEmitter<number>();
+          }
+
+          @Directive({
+            hostDirectives: [
+              {directive: HostDir, outputs: ['stringEvent', 'numberEvent: numberAlias']}
+            ]
+          })
+          class Parent {}
+
+          @Directive({selector: '[dir]'})
+          class Dir extends Parent {}
+
+          @Component({
+            selector: 'test',
+            template: \`
+              <div
+                dir
+                (numberAlias)="handleStringEvent($event)"
+                (stringEvent)="handleNumberEvent($event)"></div>
+            \`,
+          })
+          class TestCmp {
+            handleStringEvent(event: string): void {}
+            handleNumberEvent(event: number): void {}
+          }
+
+          @NgModule({
+            declarations: [TestCmp, Dir],
+          })
+          class Module {}
+        `);
+
+
+        const messages = env.driveDiagnostics().map(d => d.messageText);
+
+        expect(messages).toEqual([
+          `Argument of type 'number' is not assignable to parameter of type 'string'.`,
+          `Argument of type 'string' is not assignable to parameter of type 'number'.`
+        ]);
       });
     });
 
     describe('deferred blocks', () => {
-      beforeEach(() => {
-        env.tsconfig({_enabledBlockTypes: ['defer']});
-      });
-
       it('should check bindings inside deferred blocks', () => {
         env.write('test.ts', `
           import {Component} from '@angular/core';
 
           @Component({
             template: \`
-              {#defer}
+              @defer {
                 {{does_not_exist_main}}
-                {:placeholder}{{does_not_exist_placeholder}}
-                {:loading}{{does_not_exist_loading}}
-                {:error}{{does_not_exist_error}}
-              {/defer}
+              } @placeholder {
+                {{does_not_exist_placeholder}}
+              } @loading {
+                {{does_not_exist_loading}}
+              } @error {
+                {{does_not_exist_error}}
+              }
             \`,
             standalone: true,
           })
@@ -3662,7 +3943,7 @@ suppress
 
           @Component({
             template: \`
-              {#defer when isVisible() || does_not_exist}Hello{/defer}
+              @defer (when isVisible() || does_not_exist) {Hello}
             \`,
             standalone: true,
           })
@@ -3685,7 +3966,7 @@ suppress
 
           @Component({
             template: \`
-              {#defer prefetch when isVisible() || does_not_exist}Hello{/defer}
+              @defer (prefetch when isVisible() || does_not_exist) {Hello}
             \`,
             standalone: true,
           })
@@ -3701,25 +3982,66 @@ suppress
           `Property 'does_not_exist' does not exist on type 'Main'.`,
         ]);
       });
+
+      it('should report if a deferred trigger reference does not exist', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: \`
+              @defer (on viewport(does_not_exist)) {Hello}
+            \`,
+            standalone: true,
+          })
+          export class Main {}
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(1);
+        expect(ts.flattenDiagnosticMessageText(diags[0].messageText, ''))
+            .toContain('Trigger cannot find reference "does_not_exist".');
+      });
+
+      it('should report if a deferred trigger reference is in a different embedded view', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: \`
+              @defer (on viewport(trigger)) {Hello}
+
+              <ng-template>
+                <button #trigger></button>
+              </ng-template>
+            \`,
+            standalone: true,
+          })
+          export class Main {}
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(1);
+        expect(ts.flattenDiagnosticMessageText(diags[0].messageText, ''))
+            .toContain('Trigger cannot find reference "trigger".');
+      });
     });
 
     describe('conditional blocks', () => {
-      beforeEach(() => {
-        env.tsconfig({_enabledBlockTypes: ['if', 'switch']});
-      });
-
       it('should check bindings inside if blocks', () => {
         env.write('test.ts', `
           import {Component} from '@angular/core';
 
           @Component({
             template: \`
-              {#if expr}
+              @if (expr) {
                 {{does_not_exist_main}}
-                {:else if expr1}{{does_not_exist_one}}
-                {:else if expr2}{{does_not_exist_two}}
-                {:else}{{does_not_exist_else}}
-              {/if}
+              } @else if (expr1) {
+                {{does_not_exist_one}}
+              } @else if (expr2) {
+                {{does_not_exist_two}}
+              } @else {
+                {{does_not_exist_else}}
+              }
             \`,
             standalone: true,
           })
@@ -3745,11 +4067,13 @@ suppress
 
           @Component({
             template: \`
-              {#if does_not_exist_main}
+              @if (does_not_exist_main) {
                 main
-                {:else if does_not_exist_one} one
-                {:else if does_not_exist_two} two
-              {/if}
+              } @else if (does_not_exist_one) {
+                one
+              } @else if (does_not_exist_two) {
+                two
+              }
             \`,
             standalone: true,
           })
@@ -3769,7 +4093,9 @@ suppress
           import {Component} from '@angular/core';
 
           @Component({
-            template: \`{#if value === 1; as alias}{{acceptsNumber(alias)}}{/if}\`,
+            template: \`@if (value === 1; as alias) {
+              {{acceptsNumber(alias)}}
+            }\`,
             standalone: true,
           })
           export class Main {
@@ -3787,16 +4113,67 @@ suppress
         ]);
       });
 
+      it('should narrow the type of the if alias', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: \`@if (value; as alias) {
+              {{acceptsNumber(alias)}}
+            }\`,
+            standalone: true,
+          })
+          export class Main {
+            value: 'one' | 0 = 0;
+
+            acceptsNumber(value: number) {
+              return value;
+            }
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Argument of type 'string' is not assignable to parameter of type 'number'.`,
+        ]);
+      });
+
+      it('should narrow the type of the if alias used in a listener', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: \`@if (value; as alias) {
+              <button (click)="acceptsNumber(alias)"></button>
+            }\`,
+            standalone: true,
+          })
+          export class Main {
+            value: 'one' | 0 = 0;
+
+            acceptsNumber(value: number) {
+              return value;
+            }
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Argument of type 'string' is not assignable to parameter of type 'number'.`,
+        ]);
+      });
+
       it('should not expose the aliased expression outside of the main block', () => {
         env.write('test.ts', `
           import {Component} from '@angular/core';
 
           @Component({
             template: \`
-              {#if value === 0; as alias}
+              @if (value === 0; as alias) {
                 main block
-                {:else} {{alias}}
-              {/if}
+              } @else {
+                {{alias}}
+              }
             \`,
             standalone: true,
           })
@@ -3817,9 +4194,11 @@ suppress
 
           @Component({
             template: \`
-              {#if value === 1; as alias}
-                {#if alias}{{acceptsNumber(alias)}}{/if}
-              {/if}
+              @if (value === 1; as alias) {
+                @if (alias) {
+                  {{acceptsNumber(alias)}}
+                }
+              }
             \`,
             standalone: true,
           })
@@ -3844,10 +4223,11 @@ suppress
 
           @Component({
             template: \`
-              {#if expr === 1}
+              @if (expr === 1) {
                 main block
-                {:else} {{acceptsNumber(expr)}}
-              {/if}
+              } @else {
+                {{acceptsNumber(expr)}}
+              }
             \`,
             standalone: true,
           })
@@ -3866,17 +4246,134 @@ suppress
         ]);
       });
 
+      it('should narrow the type in listeners inside if blocks', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: \`
+              @if (expr === 'hello') {
+                <button (click)="acceptsNumber(expr)"></button>
+              }
+            \`,
+            standalone: true,
+          })
+          export class Main {
+            expr: 'hello' | 1 = 'hello';
+
+            acceptsNumber(value: number) {
+              return value;
+            }
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Argument of type 'string' is not assignable to parameter of type 'number'.`,
+        ]);
+      });
+
+      it('should narrow the type in listeners inside else if blocks', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: \`
+              @if (expr === 1) {
+                One
+              } @else if (expr === 'hello') {
+                <button (click)="acceptsNumber(expr)"></button>
+              }
+            \`,
+            standalone: true,
+          })
+          export class Main {
+            expr: 'hello' | 1 | 2 = 'hello';
+
+            acceptsNumber(value: number) {
+              return value;
+            }
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Argument of type 'string' is not assignable to parameter of type 'number'.`,
+        ]);
+      });
+
+      it('should narrow the type in listeners inside else blocks', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: \`
+              @if (expr === 1) {
+                One
+              } @else if (expr === 2) {
+                Two
+              } @else {
+                <button (click)="acceptsNumber(expr)"></button>
+              }
+            \`,
+            standalone: true,
+          })
+          export class Main {
+            expr: 'hello' | 1 | 2 = 'hello';
+
+            acceptsNumber(value: number) {
+              return value;
+            }
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Argument of type 'string' is not assignable to parameter of type 'number'.`,
+        ]);
+      });
+
+      it('should produce a single diagnostic for an invalid expression of an if block containing a event listener',
+         () => {
+           env.write('test.ts', `
+           import {Component} from '@angular/core';
+
+           @Component({
+             template: \`
+               @if (does_not_exist) {
+                 <button (click)="test()"></button>
+               }
+             \`,
+             standalone: true,
+           })
+           export class Main {
+             test() {}
+           }
+         `);
+
+           const diags = env.driveDiagnostics();
+           expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+             `Property 'does_not_exist' does not exist on type 'Main'.`,
+           ]);
+         });
+
       it('should check bindings inside switch blocks', () => {
         env.write('test.ts', `
           import {Component} from '@angular/core';
 
           @Component({
             template: \`
-              {#switch expr}
-                {:case 1}{{does_not_exist_one}}
-                {:case 2}{{does_not_exist_two}}
-                {:default}{{does_not_exist_default}}
-              {/switch}
+              @switch (expr) {
+                @case (1) {
+                  {{does_not_exist_one}}
+                }
+                @case (2) {
+                  {{does_not_exist_two}}
+                }
+                @default {
+                  {{does_not_exist_default}}
+                }
+              }
             \`,
             standalone: true,
           })
@@ -3899,9 +4396,11 @@ suppress
 
           @Component({
             template: \`
-              {#switch does_not_exist_main}
-                {:case does_not_exist_case} One
-              {/switch}
+              @switch (does_not_exist_main) {
+                @case (does_not_exist_case) {
+                  One
+                }
+              }
             \`,
             standalone: true,
           })
@@ -3915,16 +4414,107 @@ suppress
         ]);
       });
 
+      it('should only produce one diagnostic if the switch expression has an error', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: \`
+              @switch (does_not_exist_main) {
+                @case (1) {
+                  One
+                }
+
+                @case (2) {
+                  Two
+                }
+              }
+            \`,
+            standalone: true,
+          })
+          export class Main {}
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Property 'does_not_exist_main' does not exist on type 'Main'.`,
+        ]);
+      });
+
+      it('should only produce one diagnostic if the case expression has an error and it contains an event listener',
+         () => {
+           env.write('test.ts', `
+              import {Component} from '@angular/core';
+
+              @Component({
+                template: \`
+                  @switch (value) {
+                    @case (does_not_exist) {
+                      <button (click)="test()"></button>
+                    }
+
+                    @default {
+                      <button (click)="test()"></button>
+                    }
+                  }
+                \`,
+                standalone: true,
+              })
+              export class Main {
+                value = 'zero';
+                test() {}
+              }
+            `);
+
+           const diags = env.driveDiagnostics();
+           expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+             `Property 'does_not_exist' does not exist on type 'Main'.`,
+           ]);
+         });
+
+      it('should check a switch block that only has a default case', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: \`
+              @switch (expr) {
+                @default {
+                  {{acceptsNumber(expr)}}
+                }
+              }
+            \`,
+            standalone: true,
+          })
+          export class Main {
+            expr: 'hello' | 1 = 'hello';
+
+            acceptsNumber(value: number) {
+              return value;
+            }
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Argument of type 'string | number' is not assignable to parameter of type 'number'.  Type 'string' is not assignable to type 'number'.`
+        ]);
+      });
+
       it('should narrow the type inside switch cases', () => {
         env.write('test.ts', `
           import {Component} from '@angular/core';
 
           @Component({
             template: \`
-              {#switch expr}
-                {:case 1} One
-                {:default} {{acceptsNumber(expr)}}
-              {/switch}
+              @switch (expr) {
+                @case (1) {
+                  One
+                }
+                @default {
+                  {{acceptsNumber(expr)}}
+                }
+              }
             \`,
             standalone: true,
           })
@@ -3942,15 +4532,140 @@ suppress
           `Argument of type 'string' is not assignable to parameter of type 'number'.`
         ]);
       });
+
+      it('should narrow the switch type based on a field', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          export interface Base {
+            type: 'foo' | 'bar'
+          }
+
+          export interface Foo extends Base {
+            type: 'foo';
+            foo: string;
+          }
+
+          export interface Bar extends Base {
+            type: 'bar';
+            bar: number;
+          }
+
+          @Component({
+            template: \`
+              @switch (value.type) {
+                @case ('foo') {
+                  {{ acceptsNumber(value.foo) }}
+                }
+              }
+            \`,
+            standalone: true,
+          })
+          export class Main {
+            value: Foo | Bar = { type: 'foo', foo: 'foo' };
+
+            acceptsNumber(value: number) {
+              return value;
+            }
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Argument of type 'string' is not assignable to parameter of type 'number'.`
+        ]);
+      });
+
+      it('should produce a diagnostic if @switch and @case have different types', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: \`
+              @switch (expr) {
+                @case (1) {
+                  {{expr}}
+                }
+              }
+            \`,
+            standalone: true,
+          })
+          export class Main {
+            expr = true;
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `This comparison appears to be unintentional because the types 'boolean' and 'number' have no overlap.`,
+        ]);
+      });
+
+      it('should narrow the type in listener inside switch cases with expressions', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+          @Component({
+            template: \`
+              @switch (expr) {
+                @case ('hello') {
+                  <button (click)="acceptsNumber(expr)"></button>
+                }
+              }
+            \`,
+            standalone: true,
+          })
+          export class Main {
+            expr: 'hello' | 1 = 'hello';
+            acceptsNumber(value: number) {
+              return value;
+            }
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Argument of type 'string' is not assignable to parameter of type 'number'.`
+        ]);
+      });
+
+      it('should narrow the type in listener inside switch default case', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+          @Component({
+            template: \`
+              @switch (expr) {
+                @case (1) {
+                  One
+                }
+                @case (2) {
+                  Two
+                }
+                @default {
+                  <button (click)="acceptsNumber(expr)"></button>
+                }
+              }
+            \`,
+            standalone: true,
+          })
+          export class Main {
+            expr: 1 | 2 | 'hello' = 'hello';
+            acceptsNumber(value: number) {
+              return value;
+            }
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Argument of type 'string' is not assignable to parameter of type 'number'.`
+        ]);
+      });
     });
 
     describe('for loop blocks', () => {
       beforeEach(() => {
-        env.tsconfig({
-          // `fullTemplateTypeCheck: true` is necessary so content inside `ng-template` is checked.
-          fullTemplateTypeCheck: true,
-          _enabledBlockTypes: ['for', 'if'],
-        });
+        // `fullTemplateTypeCheck: true` is necessary so content inside `ng-template` is checked.
+        env.tsconfig({fullTemplateTypeCheck: true});
       });
 
       it('should check bindings inside of for loop blocks', () => {
@@ -3959,10 +4674,11 @@ suppress
 
           @Component({
             template: \`
-              {#for item of items; track item}
+              @for (item of items; track item) {
                 {{does_not_exist_main}}
-                {:empty}{{does_not_exist_empty}}
-              {/for}
+              } @empty {
+                {{does_not_exist_empty}}
+              }
             \`,
           })
           export class Main {
@@ -3982,7 +4698,7 @@ suppress
           import {Component} from '@angular/core';
 
           @Component({
-            template: '{#for item of does_not_exist; track item}hello{/for}',
+            template: '@for (item of does_not_exist; track item) {hello}',
           })
           export class Main {}
         `);
@@ -3998,7 +4714,7 @@ suppress
           import {Component} from '@angular/core';
 
           @Component({
-            template: '{#for item of items; track item}{{acceptsString(item)}}{/for}',
+            template: '@for (item of items; track item) { {{acceptsString(item)}} }',
           })
           export class Main {
             items = [1, 2, 3];
@@ -4021,14 +4737,14 @@ suppress
 
           @Component({
             template: \`
-              {#for item of items; track item}
+              @for (item of items; track item) {
                 {{acceptsString($index)}}
                 {{acceptsString($first)}}
                 {{acceptsString($last)}}
                 {{acceptsString($even)}}
                 {{acceptsString($odd)}}
                 {{acceptsString($count)}}
-              {/for}
+              }
             \`,
           })
           export class Main {
@@ -4043,10 +4759,10 @@ suppress
         const diags = env.driveDiagnostics();
         expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
           `Argument of type 'number' is not assignable to parameter of type 'string'.`,
-          `Argument of type 'number' is not assignable to parameter of type 'string'.`,
-          `Argument of type 'number' is not assignable to parameter of type 'string'.`,
-          `Argument of type 'number' is not assignable to parameter of type 'string'.`,
-          `Argument of type 'number' is not assignable to parameter of type 'string'.`,
+          `Argument of type 'boolean' is not assignable to parameter of type 'string'.`,
+          `Argument of type 'boolean' is not assignable to parameter of type 'string'.`,
+          `Argument of type 'boolean' is not assignable to parameter of type 'string'.`,
+          `Argument of type 'boolean' is not assignable to parameter of type 'string'.`,
           `Argument of type 'number' is not assignable to parameter of type 'string'.`,
         ]);
       });
@@ -4057,14 +4773,14 @@ suppress
 
           @Component({
             template: \`
-              {#for item of items; track item; let i = $index, f = $first, l = $last, e = $even, o = $odd, c = $count}
+              @for (item of items; track item; let i = $index, f = $first, l = $last, e = $even, o = $odd, c = $count) {
                 {{acceptsString(i)}}
                 {{acceptsString(f)}}
                 {{acceptsString(l)}}
                 {{acceptsString(e)}}
                 {{acceptsString(o)}}
                 {{acceptsString(c)}}
-              {/for}
+              }
             \`,
           })
           export class Main {
@@ -4079,10 +4795,10 @@ suppress
         const diags = env.driveDiagnostics();
         expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
           `Argument of type 'number' is not assignable to parameter of type 'string'.`,
-          `Argument of type 'number' is not assignable to parameter of type 'string'.`,
-          `Argument of type 'number' is not assignable to parameter of type 'string'.`,
-          `Argument of type 'number' is not assignable to parameter of type 'string'.`,
-          `Argument of type 'number' is not assignable to parameter of type 'string'.`,
+          `Argument of type 'boolean' is not assignable to parameter of type 'string'.`,
+          `Argument of type 'boolean' is not assignable to parameter of type 'string'.`,
+          `Argument of type 'boolean' is not assignable to parameter of type 'string'.`,
+          `Argument of type 'boolean' is not assignable to parameter of type 'string'.`,
           `Argument of type 'number' is not assignable to parameter of type 'string'.`,
         ]);
       });
@@ -4093,10 +4809,11 @@ suppress
 
           @Component({
             template: \`
-              {#for item of items; track item}
+              @for (item of items; track item) {
                 Hello
-                {:empty}{{item}} {{$index}}
-              {/for}
+              } @empty {
+                {{item}} {{$index}}
+              }
             \`,
           })
           export class Main {
@@ -4111,23 +4828,25 @@ suppress
         ]);
       });
 
-      it('should not expose variables under their implicit name if they are aliased', () => {
-        env.write('test.ts', `
-          import {Component} from '@angular/core';
+      it('should continue exposing implicit loop variables under their old names when they are aliased',
+         () => {
+           env.write('test.ts', `
+            import {Component} from '@angular/core';
 
-          @Component({
-            template: '{#for item of items; track item; let alias = $index}{{$index}} {{$count}}{/for}',
-          })
-          export class Main {
-            items = [];
-          }
-        `);
+            @Component({
+              template: '@for (item of items; track item; let alias = $index) { {{acceptsString($index)}} }',
+            })
+            export class Main {
+              items = [];
+              acceptsString(str: string) {}
+            }
+          `);
 
-        const diags = env.driveDiagnostics();
-        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
-          `Property '$index' does not exist on type 'Main'.`,
-        ]);
-      });
+           const diags = env.driveDiagnostics();
+           expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+             `Argument of type 'number' is not assignable to parameter of type 'string'.`,
+           ]);
+         });
 
       it('should not be able to write to loop template variables', () => {
         env.write('test.ts', `
@@ -4135,9 +4854,9 @@ suppress
 
           @Component({
             template: \`
-              {#for item of items; track item}
+              @for (item of items; track item) {
                 <button (click)="$index = 1"></button>
-              {/for}
+              }
             \`,
           })
           export class Main {
@@ -4151,12 +4870,76 @@ suppress
         ]);
       });
 
+      it('should not be able to write to loop template variables in a two-way binding', () => {
+        env.write('test.ts', `
+          import {Component, Directive, Input, Output, EventEmitter} from '@angular/core';
+
+          @Directive({
+            selector: '[twoWayDir]',
+            standalone: true
+          })
+          export class TwoWayDir {
+            @Input() value: number = 0;
+            @Output() valueChanges: EventEmitter<number> = new EventEmitter();
+          }
+
+          @Component({
+            template: \`
+              @for (item of items; track item) {
+                <button twoWayDir [(value)]="$index"></button>
+              }
+            \`,
+            standalone: true,
+            imports: [TwoWayDir]
+          })
+          export class Main {
+            items = [];
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Cannot use a non-signal variable '$index' in a two-way binding expression. Template variables are read-only.`,
+        ]);
+      });
+
+      it('should allow writes to signal-based template variables in two-way bindings', () => {
+        env.write('test.ts', `
+          import {Component, Directive, Input, Output, EventEmitter, signal} from '@angular/core';
+
+          @Directive({
+            selector: '[twoWayDir]',
+            standalone: true
+          })
+          export class TwoWayDir {
+            @Input() value: number = 0;
+            @Output() valueChanges: EventEmitter<number> = new EventEmitter();
+          }
+
+          @Component({
+            template: \`
+              @for (current of signals; track current) {
+                <button twoWayDir [(value)]="current"></button>
+              }
+            \`,
+            standalone: true,
+            imports: [TwoWayDir]
+          })
+          export class Main {
+            signals = [signal(1)];
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags).toEqual([]);
+      });
+
       it('should check the track expression of a for loop block', () => {
         env.write('test.ts', `
           import {Component} from '@angular/core';
 
           @Component({
-            template: '{#for item of items; track does_not_exist}{/for}',
+            template: '@for (item of items; track does_not_exist) {}',
           })
           export class Main {
             items = [];
@@ -4174,7 +4957,7 @@ suppress
           import {Component} from '@angular/core';
 
           @Component({
-            template: '{#for item of items; track trackingFn(item)}{/for}',
+            template: '@for (item of items; track trackingFn(item)) {}',
           })
           export class Main {
             items = [1, 2, 3];
@@ -4196,7 +4979,7 @@ suppress
           import {Component} from '@angular/core';
 
           @Component({
-            template: '{#for item of items; track trackingFn($index)}{/for}',
+            template: '@for (item of items; track trackingFn($index)) {}',
           })
           export class Main {
             items = [];
@@ -4218,7 +5001,7 @@ suppress
           import {Component} from '@angular/core';
 
           @Component({
-            template: '{#for item of items; let i = $index; track trackingFn(i)}{/for}',
+            template: '@for (item of items; let i = $index; track trackingFn(i)) {}',
           })
           export class Main {
             items = [];
@@ -4242,7 +5025,7 @@ suppress
           @Component({
             selector: 'test-cmp',
             standalone: true,
-            template: '{#for item of items; track $index + $count}{/for}',
+            template: '@for (item of items; track $index + $count) {}',
           })
           export class TestCmp {
             items = [];
@@ -4264,7 +5047,7 @@ suppress
               @Component({
                 selector: 'test-cmp',
                 standalone: true,
-                template: '{#for item of items; let c = $count; track $index + c}{/for}',
+                template: '@for (item of items; let c = $count; track $index + c) {}',
               })
               export class TestCmp {
                 items = [];
@@ -4288,7 +5071,7 @@ suppress
               standalone: true,
               template: \`
                 <input #ref/>
-                {#for item of items; track $index + ref.value}{/for}
+                @for (item of items; track $index + ref.value) {}
               \`,
             })
             export class TestCmp {
@@ -4315,7 +5098,7 @@ suppress
                 <input #ref/>
 
                 <ng-template>
-                  {#for item of items; track $index + ref.value}{/for}
+                  @for (item of items; track $index + ref.value) {}
                 </ng-template>
               \`,
             })
@@ -4341,7 +5124,7 @@ suppress
               standalone: true,
               template: \`
                 <ng-template let-foo>
-                  {#for item of items; track $index + foo.value}{/for}
+                  @for (item of items; track $index + foo.value) {}
                 </ng-template>
               \`,
             })
@@ -4365,9 +5148,9 @@ suppress
             selector: 'test-cmp',
             standalone: true,
             template: \`
-              {#for parent of items; track $index}
-                {#for item of parent.items; track parent}{/for}
-              {/for}
+              @for (parent of items; track $index) {
+                @for (item of parent.items; track parent) {}
+              }
             \`,
           })
           export class TestCmp {
@@ -4391,9 +5174,9 @@ suppress
               selector: 'test-cmp',
               standalone: true,
               template: \`
-                {#if expr; as alias}
-                  {#for item of items; track $index + alias}{/for}
-                {/if}
+                @if (expr; as alias) {
+                  @for (item of items; track $index + alias) {}
+                }
               \`,
             })
             export class TestCmp {
@@ -4424,7 +5207,7 @@ suppress
             selector: 'test-cmp',
             standalone: true,
             imports: [TestPipe],
-            template: '{#for item of items; track item | test}{/for}',
+            template: '@for (item of items; track item | test) {}',
           })
           export class TestCmp {
             items = [];
@@ -4435,6 +5218,656 @@ suppress
         expect(diags.length).toBe(1);
         expect(diags[0].messageText)
             .toContain('Error: Illegal State: Pipes are not allowed in this context');
+      });
+
+      it('should allow nullable values in loop expression', () => {
+        env.write('test.ts', `
+          import {Component, Pipe} from '@angular/core';
+
+          @Pipe({name: 'fakeAsync', standalone: true})
+          export class FakeAsyncPipe {
+            transform<T>(value: Iterable<T>): Iterable<T> | null | undefined {
+              return null;
+            }
+          }
+
+          @Component({
+            template: \`
+              @for (item of items | fakeAsync; track item) {
+                {{item}}
+              }
+            \`,
+            standalone: true,
+            imports: [FakeAsyncPipe]
+          })
+          export class Main {
+            items = [];
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([]);
+      });
+
+      it('should enforce that the loop expression is iterable', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: \`
+              @for (item of items; track item) {
+                {{item}}
+              }
+            \`,
+          })
+          export class Main {
+            items = 123;
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Type 'number' must have a '[Symbol.iterator]()' method that returns an iterator.`
+        ]);
+      });
+
+      it('should check for loop variables with the same name as built-in globals', () => {
+        // strictTemplates are necessary so the event listener is checked.
+        env.tsconfig({strictTemplates: true});
+        env.write('test.ts', `
+          import {Component, Directive, Input} from '@angular/core';
+
+          @Directive({
+            standalone: true,
+            selector: '[dir]'
+          })
+          export class Dir {
+            @Input('dir') value!: string;
+          }
+
+          @Component({
+            standalone: true,
+            imports: [Dir],
+            template: \`
+              @for (document of documents; track document) {
+                <button [dir]="document" (click)="$event.stopPropagation()"></button>
+              }
+            \`,
+          })
+          export class Main {
+            documents = [1, 2, 3];
+          }
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.map(d => ts.flattenDiagnosticMessageText(d.messageText, ''))).toEqual([
+          `Type 'number' is not assignable to type 'string'.`,
+        ]);
+      });
+    });
+
+    describe('control flow content projection diagnostics', () => {
+      it('should report when an @if block prevents an element from being projected', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content/> <ng-content select="bar, [foo]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @if (true) {
+                  <div foo></div>
+                  breaks projection
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {}
+        `);
+
+        const diags =
+            env.driveDiagnostics().map(d => ts.flattenDiagnosticMessageText(d.messageText, ''));
+        expect(diags.length).toBe(1);
+        expect(diags[0]).toContain(
+            `Node matches the "bar, [foo]" slot of the "Comp" component, but will ` +
+            `not be projected into the specific slot because the surrounding @if has more than one node at its root.`);
+      });
+
+      it('should report when an @if block prevents a template from being projected', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content/> <ng-content select="bar, [foo]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @if (true) {
+                  <ng-template foo></ng-template>
+                  breaks projection
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {}
+        `);
+
+        const diags =
+            env.driveDiagnostics().map(d => ts.flattenDiagnosticMessageText(d.messageText, ''));
+        expect(diags.length).toBe(1);
+        expect(diags[0]).toContain(
+            `Node matches the "bar, [foo]" slot of the "Comp" component, but will ` +
+            `not be projected into the specific slot because the surrounding @if has more than one node at its root.`);
+      });
+
+      it('should report when an @else block prevents content projection', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content select="[foo]"/> <ng-content select="[bar]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @if (expr) {
+                  <div foo></div>
+                } @else {
+                  <div bar></div>
+                  breaks projection
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {
+            expr = 0;
+          }
+        `);
+
+        const diags =
+            env.driveDiagnostics().map(d => ts.flattenDiagnosticMessageText(d.messageText, ''));
+        expect(diags.length).toBe(1);
+        expect(diags[0]).toContain(
+            `Node matches the "[bar]" slot of the "Comp" component, but will ` +
+            `not be projected into the specific slot because the surrounding @else has more than one node at its root.`);
+      });
+
+      it('should report when an @else if block prevents content projection', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content select="[foo]"/> <ng-content select="[bar]"/> <ng-content select="[baz]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @if (expr === 1) {
+                  <div foo></div>
+                } @else if (expr === 2) {
+                  <div bar></div>
+                  breaks projection
+                } @else {
+                  <div baz></div>
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {
+            expr = 0;
+          }
+        `);
+
+        const diags =
+            env.driveDiagnostics().map(d => ts.flattenDiagnosticMessageText(d.messageText, ''));
+        expect(diags.length).toBe(1);
+        expect(diags[0]).toContain(
+            `Node matches the "[bar]" slot of the "Comp" component, but will ` +
+            `not be projected into the specific slot because the surrounding @else if has more than one node at its root.`);
+      });
+
+      it('should report when an @for block prevents content from being projected', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content/> <ng-content select="bar, [foo]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @for (i of [1, 2, 3]; track i) {
+                  <div foo></div>
+                  breaks projection
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {}
+        `);
+
+        const diags =
+            env.driveDiagnostics().map(d => ts.flattenDiagnosticMessageText(d.messageText, ''));
+        expect(diags.length).toBe(1);
+        expect(diags[0]).toContain(
+            `Node matches the "bar, [foo]" slot of the "Comp" component, but will ` +
+            `not be projected into the specific slot because the surrounding @for has more than one node at its root.`);
+      });
+
+      it('should report when an @empty block prevents content from being projected', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content/> <ng-content select="bar, [foo]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @for (i of [1, 2, 3]; track i) {
+
+                } @empty {
+                  <div foo></div>
+                  breaks projection
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {}
+        `);
+
+        const diags =
+            env.driveDiagnostics().map(d => ts.flattenDiagnosticMessageText(d.messageText, ''));
+        expect(diags.length).toBe(1);
+        expect(diags[0]).toContain(
+            `Node matches the "bar, [foo]" slot of the "Comp" component, but will ` +
+            `not be projected into the specific slot because the surrounding @empty has more than one node at its root.`);
+      });
+
+      it('should report nodes that are targeting different slots but cannot be projected', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content select="[foo]"/> <ng-content select="[bar]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @if (true) {
+                  <div foo></div>
+                  <div bar></div>
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {}
+        `);
+
+        const diags =
+            env.driveDiagnostics().map(d => ts.flattenDiagnosticMessageText(d.messageText, ''));
+        expect(diags.length).toBe(2);
+        expect(diags[0]).toContain(
+            `Node matches the "[foo]" slot of the "Comp" component, but will not be projected`);
+        expect(diags[1]).toContain(
+            `Node matches the "[bar]" slot of the "Comp" component, but will not be projected`);
+      });
+
+      it('should report nodes that are targeting the same slot but cannot be projected', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content select="[foo]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @if (true) {
+                  <div foo></div>
+                  <span foo></span>
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {}
+        `);
+
+        const diags =
+            env.driveDiagnostics().map(d => ts.flattenDiagnosticMessageText(d.messageText, ''));
+        expect(diags.length).toBe(2);
+        expect(diags[0]).toContain(
+            `Node matches the "[foo]" slot of the "Comp" component, but will not be projected`);
+        expect(diags[1]).toContain(
+            `Node matches the "[foo]" slot of the "Comp" component, but will not be projected`);
+      });
+
+      it('should report when preserveWhitespaces may affect content projection', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content select="[foo]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            preserveWhitespaces: true,
+            template: \`
+              <comp>
+                @if (true) {
+                  <div foo></div>
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {}
+        `);
+
+        const diags =
+            env.driveDiagnostics().map(d => ts.flattenDiagnosticMessageText(d.messageText, ''));
+        expect(diags.length).toBe(1);
+        expect(diags[0]).toContain(`Node matches the "[foo]" slot of the "Comp" component`);
+        expect(diags[0]).toContain(
+            `Note: the host component has \`preserveWhitespaces: true\` which may cause ` +
+            `whitespace to affect content projection.`);
+      });
+
+      it('should not report when there is only one root node', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content select="[foo]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @if (true) {
+                  <div foo></div>
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {}
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(0);
+      });
+
+      it('should not report when there are comments at the root of the control flow node', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content select="[foo]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @if (true) {
+                  <!-- before -->
+                  <div foo></div>
+                  <!-- after -->
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {}
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(0);
+      });
+
+      it('should not report when the component only has a catch-all slot', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @if (true) {
+                  <div foo></div>
+                  breaks projection
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {}
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(0);
+      });
+
+      it('should allow the content projection diagnostic to be disabled individually', () => {
+        env.tsconfig({
+          extendedDiagnostics: {
+            checks: {
+              controlFlowPreventingContentProjection: DiagnosticCategoryLabel.Suppress,
+            }
+          }
+        });
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content/> <ng-content select="bar, [foo]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @if (true) {
+                  <div foo></div>
+                  breaks projection
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {}
+        `);
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(0);
+      });
+
+      it('should allow the content projection diagnostic to be disabled via `defaultCategory`',
+         () => {
+           env.tsconfig({
+             extendedDiagnostics: {
+               defaultCategory: DiagnosticCategoryLabel.Suppress,
+             }
+           });
+           env.write('test.ts', `
+              import {Component} from '@angular/core';
+
+              @Component({
+                selector: 'comp',
+                template: '<ng-content/> <ng-content select="bar, [foo]"/>',
+                standalone: true,
+              })
+              class Comp {}
+
+              @Component({
+                standalone: true,
+                imports: [Comp],
+                template: \`
+                  <comp>
+                    @if (true) {
+                      <div foo></div>
+                      breaks projection
+                    }
+                  </comp>
+                \`,
+              })
+              class TestCmp {}
+            `);
+
+           const diags = env.driveDiagnostics();
+           expect(diags.length).toBe(0);
+         });
+
+      it('should report when an @case block prevents an element from being projected', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content/> <ng-content select="bar, [foo]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @switch (expr) {
+                  @case (1) {
+                    <div foo></div>
+                    breaks projection
+                  }
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {
+            expr = 1;
+          }
+        `);
+
+        const diags =
+            env.driveDiagnostics().map(d => ts.flattenDiagnosticMessageText(d.messageText, ''));
+        expect(diags.length).toBe(1);
+        expect(diags[0]).toContain(
+            `Node matches the "bar, [foo]" slot of the "Comp" component, but will ` +
+            `not be projected into the specific slot because the surrounding @case has more than one node at its root.`);
+      });
+
+      it('should report when an @default block prevents an element from being projected', () => {
+        env.write('test.ts', `
+          import {Component} from '@angular/core';
+
+          @Component({
+            selector: 'comp',
+            template: '<ng-content select="[foo]"/> <ng-content select="[bar]"/>',
+            standalone: true,
+          })
+          class Comp {}
+
+          @Component({
+            standalone: true,
+            imports: [Comp],
+            template: \`
+              <comp>
+                @switch (expr) {
+                  @case (1) {
+                    <div foo></div>
+                  }
+                  @default {
+                    <div bar></div>
+                    breaks projection
+                  }
+                }
+              </comp>
+            \`,
+          })
+          class TestCmp {
+            expr = 2;
+          }
+        `);
+
+        const diags =
+            env.driveDiagnostics().map(d => ts.flattenDiagnosticMessageText(d.messageText, ''));
+        expect(diags.length).toBe(1);
+        expect(diags[0]).toContain(
+            `Node matches the "[bar]" slot of the "Comp" component, but will ` +
+            `not be projected into the specific slot because the surrounding @default has more than one node at its root.`);
       });
     });
   });

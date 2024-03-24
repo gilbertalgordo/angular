@@ -16,6 +16,7 @@ import {ClassDeclaration, Decorator, ReflectionHost} from '../../reflection';
 import {ImportManager} from '../../translator';
 import {TypeCheckContext} from '../../typecheck/api';
 import {ExtendedTemplateChecker} from '../../typecheck/extended/api';
+import {TemplateSemanticsChecker} from '../../typecheck/template_semantics/api/api';
 import {Xi18nContext} from '../../xi18n';
 
 /**
@@ -175,6 +176,10 @@ export interface DecoratorHandler<D, A, S extends SemanticSymbol|null, R> {
       (component: ts.ClassDeclaration, extendedTemplateChecker: ExtendedTemplateChecker):
           ts.Diagnostic[];
 
+  templateSemanticsCheck?
+      (component: ts.ClassDeclaration, templateSemanticsChecker: TemplateSemanticsChecker):
+          ts.Diagnostic[];
+
   /**
    * Generate a description of the field which should be added to the class, including any
    * initialization code to be generated.
@@ -202,8 +207,9 @@ export interface DecoratorHandler<D, A, S extends SemanticSymbol|null, R> {
    * Generates code based on each individual source file without using its
    * dependencies (suitable for local dev edit/refresh workflow)
    */
-  compileLocal(node: ClassDeclaration, analysis: Readonly<A>, constantPool: ConstantPool):
-      CompileResult|CompileResult[];
+  compileLocal(
+      node: ClassDeclaration, analysis: Readonly<A>, resolution: Readonly<Partial<R>>,
+      constantPool: ConstantPool): CompileResult|CompileResult[];
 }
 
 /**

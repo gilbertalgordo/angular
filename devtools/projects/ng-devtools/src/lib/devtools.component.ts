@@ -14,32 +14,38 @@ import {Events, MessageBus} from 'protocol';
 import {interval} from 'rxjs';
 
 import {ThemeService} from './theme-service';
+import {MatTooltip} from '@angular/material/tooltip';
+import {DevToolsTabsComponent} from './devtools-tabs/devtools-tabs.component';
 
 @Component({
   selector: 'ng-devtools',
   templateUrl: './devtools.component.html',
   styleUrls: ['./devtools.component.scss'],
   animations: [
-    trigger(
-        'enterAnimation',
-        [
-          transition(':enter', [style({opacity: 0}), animate('200ms', style({opacity: 1}))]),
-          transition(':leave', [style({opacity: 1}), animate('200ms', style({opacity: 0}))]),
-        ]),
+    trigger('enterAnimation', [
+      transition(':enter', [style({opacity: 0}), animate('200ms', style({opacity: 1}))]),
+      transition(':leave', [style({opacity: 1}), animate('200ms', style({opacity: 0}))]),
+    ]),
   ],
+  standalone: true,
+  imports: [DevToolsTabsComponent, MatTooltip],
 })
 export class DevToolsComponent implements OnInit, OnDestroy {
-  angularExists: boolean|null = null;
-  angularVersion: string|boolean|undefined = undefined;
+  angularExists: boolean | null = null;
+  angularVersion: string | boolean | undefined = undefined;
   angularIsInDevMode = true;
-  ivy: boolean;
+  hydration: boolean = false;
+  ivy!: boolean;
 
   private readonly _firefoxStyleName = 'firefox_styles.css';
   private readonly _chromeStyleName = 'chrome_styles.css';
 
   constructor(
-      private _messageBus: MessageBus<Events>, private _themeService: ThemeService,
-      private _platform: Platform, @Inject(DOCUMENT) private _document: Document) {}
+    private _messageBus: MessageBus<Events>,
+    private _themeService: ThemeService,
+    private _platform: Platform,
+    @Inject(DOCUMENT) private _document: Document,
+  ) {}
 
   private _interval$ = interval(500).subscribe((attempt) => {
     if (attempt === 10) {
@@ -51,16 +57,18 @@ export class DevToolsComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this._themeService.initializeThemeWatcher();
 
-    this._messageBus.once('ngAvailability', ({version, devMode, ivy}) => {
+    this._messageBus.once('ngAvailability', ({version, devMode, ivy, hydration}) => {
       this.angularExists = !!version;
       this.angularVersion = version;
       this.angularIsInDevMode = devMode;
       this.ivy = ivy;
       this._interval$.unsubscribe();
+      this.hydration = hydration;
     });
 
-    const browserStyleName =
-        this._platform.FIREFOX ? this._firefoxStyleName : this._chromeStyleName;
+    const browserStyleName = this._platform.FIREFOX
+      ? this._firefoxStyleName
+      : this._chromeStyleName;
     this._loadStyle(browserStyleName);
   }
 

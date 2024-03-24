@@ -9,7 +9,7 @@
 import {compileClassMetadata, compileDeclareClassMetadata, compileDeclareDirectiveFromMetadata, compileDirectiveFromMetadata, ConstantPool, FactoryTarget, makeBindingParser, R3ClassMetadata, R3DirectiveMetadata, WrappedNodeExpr} from '@angular/compiler';
 import ts from 'typescript';
 
-import {Reference, ReferenceEmitter} from '../../../imports';
+import {ImportedSymbolsTracker, Reference, ReferenceEmitter} from '../../../imports';
 import {extractSemanticTypeParameters, SemanticDepGraphUpdater} from '../../../incremental/semantic_graph';
 import {ClassPropertyMapping, DirectiveTypeCheckMeta, extractDirectiveTypeCheckMeta, HostDirectiveMeta, InputMapping, MatchSource, MetadataReader, MetadataRegistry, MetaKind} from '../../../metadata';
 import {PartialEvaluator} from '../../../partial_evaluator';
@@ -62,8 +62,10 @@ export class DirectiveDecoratorHandler implements
       private semanticDepGraphUpdater: SemanticDepGraphUpdater|null,
       private annotateForClosureCompiler: boolean,
       private perf: PerfRecorder,
+      private importTracker: ImportedSymbolsTracker,
       private includeClassMetadata: boolean,
       private readonly compilationMode: CompilationMode,
+      private readonly generateExtraImportsInLocalMode: boolean,
   ) {}
 
   readonly precedence = HandlerPrecedence.PRIMARY;
@@ -102,8 +104,9 @@ export class DirectiveDecoratorHandler implements
     this.perf.eventCount(PerfEvent.AnalyzeDirective);
 
     const directiveResult = extractDirectiveMetadata(
-        node, decorator, this.reflector, this.evaluator, this.refEmitter, this.referencesRegistry,
-        this.isCore, this.annotateForClosureCompiler, this.compilationMode);
+        node, decorator, this.reflector, this.importTracker, this.evaluator, this.refEmitter,
+        this.referencesRegistry, this.isCore, this.annotateForClosureCompiler, this.compilationMode,
+        /* defaultSelector */ null);
     if (directiveResult === undefined) {
       return {};
     }
@@ -168,11 +171,15 @@ export class DirectiveDecoratorHandler implements
       isStandalone: analysis.meta.isStandalone,
       isSignal: analysis.meta.isSignal,
       imports: null,
+      deferredImports: null,
       schemas: null,
+      ngContentSelectors: null,
       decorator: analysis.decorator,
+      preserveWhitespaces: false,
       // Directives analyzed within our own compilation are not _assumed_ to export providers.
       // Instead, we statically analyze their imports to make a direct determination.
       assumedToExportProviders: false,
+      isExplicitlyDeferred: false,
     });
 
     this.injectableRegistry.registerInjectable(node, {
@@ -182,6 +189,10 @@ export class DirectiveDecoratorHandler implements
 
   resolve(node: ClassDeclaration, analysis: DirectiveHandlerData, symbol: DirectiveSymbol):
       ResolveResult<unknown> {
+    if (this.compilationMode === CompilationMode.LOCAL) {
+      return {};
+    }
+
     if (this.semanticDepGraphUpdater !== null && analysis.baseClass instanceof Reference) {
       symbol.baseClass = this.semanticDepGraphUpdater.getSymbol(analysis.baseClass.node);
     }
@@ -242,7 +253,7 @@ export class DirectiveDecoratorHandler implements
 
   compileLocal(
       node: ClassDeclaration, analysis: Readonly<DirectiveHandlerData>,
-      pool: ConstantPool): CompileResult[] {
+      resolution: Readonly<unknown>, pool: ConstantPool): CompileResult[] {
     const fac = compileNgFactoryDefField(toFactoryMetadata(analysis.meta, FactoryTarget.Directive));
     const def = compileDirectiveFromMetadata(analysis.meta, pool, makeBindingParser());
     const inputTransformFields = compileInputTransformFields(analysis.inputs);

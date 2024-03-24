@@ -8,6 +8,8 @@
 export interface BazelAndG3Options {
     annotateForClosureCompiler?: boolean;
     generateDeepReexports?: boolean;
+    generateExtraImportsInLocalMode?: boolean;
+    onlyExplicitDeferDependencyImports?: boolean;
     onlyPublishPublicTypingsForNgModules?: boolean;
 }
 
@@ -55,6 +57,7 @@ export interface LegacyNgcOptions {
 export interface MiscOptions {
     compileNonExportedClasses?: boolean;
     disableTypeScriptVersionCheck?: boolean;
+    forbidOrphanComponents?: boolean;
 }
 
 // @public

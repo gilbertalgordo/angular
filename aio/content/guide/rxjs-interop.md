@@ -16,6 +16,7 @@ The `toSignal` function creates a signal which tracks the value of an Observable
 import {Component} from '@angular/core';
 import {AsyncPipe} from '@angular/common';
 import {interval} from 'rxjs';
+import { toSignal } from '@angular/core/rxjs-interop';
 
 @Component({
   standalone: true,
@@ -58,9 +59,13 @@ The `manualCleanup` option disables this automatic cleanup. You can use this set
 
 ### Error and Completion
 
-If an Observable used in `toSignal` produces an error, that error is thrown when the signal is read.
+If an Observable used in `toSignal` produces an error, that error is thrown when the signal is read. It's recommended that errors be handled upstream in the Observable and turned into a value instead (which might indicate to the template that an error page needs to be displayed). This can be done using the `catchError` operator in RxJS.
 
 If an Observable used in `toSignal` completes, the signal continues to return the most recently emitted value before completion.
+
+#### The `rejectErrors` option
+
+`toSignal`'s default behavior for errors propagates the error channel of the `Observable` through to the signal. An alternative approach is to reject errors entirely, using the `rejectErrors` option of `toSignal`. With this option, errors are thrown back into RxJS where they'll be trapped as uncaught exceptions in the global application error handler. Since Observables no longer produce values after they error, the signal returned by `toSignal` will keep returning the last successful value received from the Observable forever. This is the same behavior as the `async` pipe has for errors.
 
 ## `toObservable`
 
@@ -68,6 +73,7 @@ The `toObservable` utility creates an `Observable` which tracks the value of a s
 
 ```ts
 import { Component, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 
 @Component(...)
 export class SearchResults {

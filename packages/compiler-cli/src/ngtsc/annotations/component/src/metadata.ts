@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {AnimationTriggerNames, R3ClassMetadata, R3ComponentMetadata, R3TemplateDependencyMetadata, SchemaMetadata} from '@angular/compiler';
+import {AnimationTriggerNames, DeclarationListEmitMode, DeferBlockDepsEmitMode, R3ClassDebugInfo, R3ClassMetadata, R3ComponentMetadata, R3DeferPerBlockDependency, R3DeferPerComponentDependency, R3TemplateDependencyMetadata, SchemaMetadata, TmplAstDeferredBlock} from '@angular/compiler';
 import ts from 'typescript';
 
 import {Reference} from '../../../imports';
@@ -24,7 +24,7 @@ import {ParsedTemplateWithSource, StyleUrlMeta} from './resources';
  */
 export type ComponentMetadataResolvedFields = SubsetOfKeys<
     R3ComponentMetadata<R3TemplateDependencyMetadata>,
-    'declarations'|'declarationListEmitMode'|'deferBlocks'|'deferrableDeclToImportDecl'>;
+    'declarations'|'declarationListEmitMode'|'defer'>;
 
 export interface ComponentAnalysisData {
   /**
@@ -36,6 +36,7 @@ export interface ComponentAnalysisData {
   typeCheckMeta: DirectiveTypeCheckMeta;
   template: ParsedTemplateWithSource;
   classMetadata: R3ClassMetadata|null;
+  classDebugInfo: R3ClassDebugInfo|null;
 
   inputs: ClassPropertyMapping<InputMapping>;
   outputs: ClassPropertyMapping;
@@ -69,6 +70,13 @@ export interface ComponentAnalysisData {
 
   rawImports: ts.Expression|null;
   resolvedImports: Reference<ClassDeclaration>[]|null;
+  rawDeferredImports: ts.Expression|null;
+  resolvedDeferredImports: Reference<ClassDeclaration>[]|null;
+
+  /**
+   * Map of symbol name -> import path for types from `@Component.deferredImports` field.
+   */
+  explicitlyDeferredTypes: R3DeferPerComponentDependency[]|null;
 
   schemas: SchemaMetadata[]|null;
 
@@ -81,5 +89,41 @@ export interface ComponentAnalysisData {
   rawHostDirectives: ts.Expression|null;
 }
 
-export type ComponentResolutionData =
-    Pick<R3ComponentMetadata<R3TemplateDependencyMetadata>, ComponentMetadataResolvedFields>;
+export interface ComponentResolutionData {
+  declarations: R3TemplateDependencyMetadata[];
+  declarationListEmitMode: DeclarationListEmitMode;
+
+  /**
+   * Map of all types that can be defer loaded (ts.ClassDeclaration) ->
+   * corresponding import declaration (ts.ImportDeclaration) within
+   * the current source file.
+   */
+  deferrableDeclToImportDecl: Map<ClassDeclaration, ts.ImportDeclaration>;
+
+  /**
+   * Map of `@defer` blocks -> their corresponding dependencies.
+   * Required to compile the defer resolver function in `PerBlock` mode.
+   */
+  deferPerBlockDependencies: Map<TmplAstDeferredBlock, DeferredComponentDependency[]>;
+
+  /**
+   * Defines how dynamic imports for deferred dependencies should be grouped:
+   *  - either in a function on per-component basis (in case of local compilation)
+   *  - or in a function on per-block basis (in full compilation mode)
+   */
+  deferBlockDepsEmitMode: DeferBlockDepsEmitMode;
+
+  /**
+   * List of deferrable dependencies in the entire component. Used to compile the
+   * defer resolver function in `PerComponent` mode.
+   */
+  deferPerComponentDependencies: R3DeferPerComponentDependency[];
+}
+
+/**
+ * Describes a dependency used within a `@defer` block.
+ */
+export type DeferredComponentDependency = R3DeferPerBlockDependency&{
+  /** Reference to the declaration that defines the dependency. */
+  declaration: Reference<ClassDeclaration>;
+};

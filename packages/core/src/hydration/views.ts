@@ -53,8 +53,7 @@ export function locateDehydratedViewsInContainer(
  * stored on a given lContainer.
  * Returns `null` by default, when hydration is not enabled.
  */
-let _findMatchingDehydratedViewImpl: typeof findMatchingDehydratedViewImpl =
-    (lContainer: LContainer, template: string|null) => null;
+let _findMatchingDehydratedViewImpl: typeof findMatchingDehydratedViewImpl = () => null;
 
 /**
  * Retrieves the next dehydrated view from the LContainer and verifies that
@@ -67,8 +66,8 @@ let _findMatchingDehydratedViewImpl: typeof findMatchingDehydratedViewImpl =
  */
 function findMatchingDehydratedViewImpl(
     lContainer: LContainer, template: string|null): DehydratedContainerView|null {
-  const views = lContainer[DEHYDRATED_VIEWS] ?? [];
-  if (!template || views.length === 0) {
+  const views = lContainer[DEHYDRATED_VIEWS];
+  if (!template || views === null || views.length === 0) {
     return null;
   }
   const view = views[0];

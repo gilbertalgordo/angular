@@ -27,6 +27,12 @@ const animationKeywords = new Set([
 ]);
 
 /**
+ * The following array contains all of the CSS at-rule identifiers which are scoped.
+ */
+const scopedAtRuleIdentifiers =
+    ['@media', '@supports', '@document', '@layer', '@container', '@scope', '@starting-style'];
+
+/**
  * The following class has its origin from a port of shadowCSS from webcomponents.js to TypeScript.
  * It has since diverge in many ways to tailor Angular's needs.
  *
@@ -557,10 +563,7 @@ export class ShadowCss {
       let content = rule.content;
       if (rule.selector[0] !== '@') {
         selector = this._scopeSelector(rule.selector, scopeSelector, hostSelector);
-      } else if (
-          rule.selector.startsWith('@media') || rule.selector.startsWith('@supports') ||
-          rule.selector.startsWith('@document') || rule.selector.startsWith('@layer') ||
-          rule.selector.startsWith('@container') || rule.selector.startsWith('@scope')) {
+      } else if (scopedAtRuleIdentifiers.some(atRule => rule.selector.startsWith(atRule))) {
         content = this._scopeSelectors(rule.content, scopeSelector, hostSelector);
       } else if (rule.selector.startsWith('@font-face') || rule.selector.startsWith('@page')) {
         content = this._stripScopingSelectors(rule.content);
@@ -713,7 +716,7 @@ export class ShadowCss {
       // (ie: ".\fc ber" for ".über") is not a separator between 2 selectors
       // also keep in mind that backslashes are replaced by a placeholder by SafeSelector
       // These escaped selectors happen for example when esbuild runs with optimization.minify.
-      if (part.match(_placeholderRe) && selector[res.index + 1]?.match(/[a-fA-F\d]/)) {
+      if (part.match(/__esc-ph-(\d+)__/) && selector[res.index + 1]?.match(/[a-fA-F\d]/)) {
         continue;
       }
 
@@ -752,7 +755,13 @@ class SafeSelector {
     // pseudo-class, but writing `.foo\:blue` will match, because the colon was escaped.
     // Replace all escape sequences (`\` followed by a character) with a placeholder so
     // that our handling of pseudo-selectors doesn't mess with them.
-    selector = this._escapeRegexMatches(selector, /(\\.)/g);
+    // Escaped characters have a specific placeholder so they can be detected separately.
+    selector = selector.replace(/(\\.)/g, (_, keep) => {
+      const replaceBy = `__esc-ph-${this.index}__`;
+      this.placeholders.push(keep);
+      this.index++;
+      return replaceBy;
+    });
 
     // Replaces the expression in `:nth-child(2n + 1)` with a placeholder.
     // WS and "+" would otherwise be interpreted as selector separators.
@@ -765,7 +774,7 @@ class SafeSelector {
   }
 
   restore(content: string): string {
-    return content.replace(_placeholderRe, (_ph, index) => this.placeholders[+index]);
+    return content.replace(/__(?:ph|esc-ph)-(\d+)__/g, (_ph, index) => this.placeholders[+index]);
   }
 
   content(): string {
@@ -824,8 +833,6 @@ const _commentRe = /\/\*[\s\S]*?\*\//g;
 const _commentWithHashRe = /\/\*\s*#\s*source(Mapping)?URL=/g;
 const COMMENT_PLACEHOLDER = '%COMMENT%';
 const _commentWithHashPlaceHolderRe = new RegExp(COMMENT_PLACEHOLDER, 'g');
-
-const _placeholderRe = /__ph-(\d+)__/g;
 
 const BLOCK_PLACEHOLDER = '%BLOCK%';
 const _ruleRe = new RegExp(
